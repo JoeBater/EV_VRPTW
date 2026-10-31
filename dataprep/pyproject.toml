@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ev-vrptw-dataprep"
+version = "0.1.0"
+description = "Builds terrain-aware EV-VRPTW instances from Solomon benchmarks placed in real UK cities"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "pandas",
+    "rasterio",
+    "boto3",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+ev-vrptw-dataprep = "ev_vrptw_dataprep.pipeline:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
