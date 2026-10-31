@@ -1,25 +1,31 @@
 # data
 
-Inputs for the solver. The `dataprep/` pipeline generates most of them, so only small
-reference files are committed here.
+Inputs for the solver. The `dataprep/` pipeline generates most of them.
+
+Two **sample cities are committed: Bath (hilly) and Cambridge (flat)**. That's enough to
+build and run the solver straight after cloning. Every other city's data is git-ignored
+(the `*Bath*` / `*Cambridge*` allowlist is in the root `.gitignore`) and can be
+regenerated with `dataprep/`.
 
 ```
 data/
-├── raw/          Original Solomon benchmark CSVs (small; committed)
-├── processed/    City-mapped instances and short-path files (generated; git-ignored)
-└── weather/      Hourly weather per city from Open-Meteo (downloaded; git-ignored)
+├── raw/          Original Solomon benchmark CSVs (committed)
+├── processed/    City-mapped instances and short-path files (sample cities committed)
+└── weather/      Hourly weather per city from Open-Meteo (sample cities committed)
 ```
 
 ## Datasets
 
-| Dataset | Folder | Source | Committed? |
+| Dataset | Folder | Source | Committed |
 |---|---|---|---|
-| Solomon VRPTW benchmarks (c1, c2, r1, r2, rc1, rc2) | `raw/` | Solomon (1987) | yes |
-| City-mapped instances `<City>_<scale>_<benchmark>.csv` | `processed/instances/` | `dataprep/`: scaling, geocoding, elevation | no (~27 MB) |
-| Short paths `<benchmark>_short_paths.txt` | `processed/short_paths/` | `dataprep/` | no |
-| Weather `<City>-weather.csv` | `weather/` | [Open-Meteo](https://open-meteo.com/) historical API | no (~43 MB) |
+| Solomon VRPTW benchmarks (c1, c2, r1, r2, rc1, rc2) | `raw/` | Solomon (1987) | all |
+| City-mapped instances `<City>_<scale>_<benchmark>.csv` | `processed/instances/` | `dataprep/`: scaling, geocoding, elevation | Bath, Cambridge |
+| Short paths | `processed/short_paths/` | `dataprep/` | Bath, Cambridge |
+| Weather `<City>-weather.csv` | `weather/` | [Open-Meteo](https://open-meteo.com/) historical API | Bath, Cambridge |
 
-### Cities
+To add another sample city, add a `!data/**/*<City>*` line to `.gitignore`.
+
+### All cities
 
 Aberystwyth, Bath, Belfast, Birmingham, Bristol, Cambridge, Cardiff, Carlisle, Chichester,
 Derry, Glasgow, Inverness, Lancaster, Leeds, Liverpool, London, Newcastle, Plymouth,

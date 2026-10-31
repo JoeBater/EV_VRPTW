@@ -74,9 +74,14 @@ results/*
 !results/.gitkeep
 !results/README.md
 
-# Data: generated/large files stay out of git; see data/README.md
-data/processed/*
-data/weather/*
+# Data: only the sample cities (Bath, Cambridge) are committed; see data/README.md
+# Ignore all files, re-include directories so the negations below can apply
+data/processed/**
+data/weather/**
+!data/processed/**/
+!data/weather/**/
+!data/**/*Bath*
+!data/**/*Cambridge*
 !data/**/.gitkeep
 !data/**/README.md
 
