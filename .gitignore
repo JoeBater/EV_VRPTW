@@ -66,3 +66,31 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# ---- Project-specific ----
+
+# Run outputs (route logs, progress CSVs, video frames)
+results/*
+!results/.gitkeep
+!results/README.md
+
+# Data: generated/large files stay out of git; see data/README.md
+data/processed/*
+data/weather/*
+!data/**/.gitkeep
+!data/**/README.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.workspace
+.codelite/
