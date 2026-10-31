@@ -74,14 +74,18 @@ results/*
 !results/.gitkeep
 !results/README.md
 
-# Data: only the sample cities (Bath, Cambridge) are committed; see data/README.md
-# Ignore all files, re-include directories so the negations below can apply
-data/processed/**
-data/weather/**
-!data/processed/**/
-!data/weather/**/
+# Data: everything under data/ is ignored by default, wherever it lives.
+# Only the sample cities (Bath, Cambridge) and a few reference files are committed.
+# See data/README.md. Check a path with: git check-ignore -v <path>
+data/**
+!data/**/
 !data/**/*Bath*
 !data/**/*Cambridge*
+# Sample cities use the 5 km grid only; drop scale-10 instances and short paths
+data/**/*_10_*
+data/**/*_10.*
+!data/raw/solomon/*.csv
+!data/raw/cities.csv
 !data/**/.gitkeep
 !data/**/README.md
 

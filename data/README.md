@@ -2,7 +2,8 @@
 
 Inputs for the solver. The `dataprep/` pipeline generates most of them.
 
-Two **sample cities are committed: Bath (hilly) and Cambridge (flat)**. That's enough to
+Two **sample cities are committed: Bath (hilly) and Cambridge (flat)**, at **scale 5 only**
+(a 5 km × 5 km grid, which suits two small cities; scale-10 files are git-ignored). That's enough to
 build and run the solver straight after cloning. Every other city's data is git-ignored
 (the `*Bath*` / `*Cambridge*` allowlist is in the root `.gitignore`) and can be
 regenerated with `dataprep/`.
