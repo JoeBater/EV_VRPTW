@@ -18,7 +18,7 @@ data/
 │   ├── edge_samples/   per-edge elevation profiles (JSON)     (ignored)
 │   └── plots/          MST/elevation plots                    (ignored)
 ├── weather/            Hourly weather per city                (sample cities committed)
-│   └── open-meteo/     <City>-weather.csv (2024), plus 2022/ and 2023/ splits
+│   └── open-meteo/<year>/<City>-weather-<year>.csv   2022–2025
 └── dem/                Copernicus DEM tile cache              (ignored; downloaded on demand)
 ```
 

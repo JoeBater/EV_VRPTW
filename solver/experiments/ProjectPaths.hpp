@@ -25,9 +25,12 @@ namespace fs = std::filesystem;
 
 inline std::string& dataOverride()    { static std::string s; return s; }
 inline std::string& resultsOverride() { static std::string s; return s; }
+inline int& weatherYearSetting()       { static int y = 2024; return y; }
 
 inline void setDataRoot(const std::string& d)    { dataOverride() = d; }
 inline void setResultsRoot(const std::string& r) { resultsOverride() = r; }
+inline void setWeatherYear(int y)                { weatherYearSetting() = y; }
+inline int  weatherYear()                        { return weatherYearSetting(); }
 
 inline fs::path resolveRoot(const std::string& override, const char* envVar, const char* fallback)
 {
@@ -52,9 +55,11 @@ inline std::string shortPathsFile(const std::string& benchmark)
     return (dataRoot() / "processed" / "short_paths" / (benchmark + "_short_paths.txt")).string();
 }
 
+// Hourly weather for the selected year (main.cpp --year, default 2024)
 inline std::string weatherFile(const std::string& city)
 {
-    return (dataRoot() / "weather" / "open-meteo" / (city + "-weather.csv")).string();
+    std::string year = std::to_string(weatherYear());
+    return (dataRoot() / "weather" / "open-meteo" / year / (city + "-weather-" + year + ".csv")).string();
 }
 
 // True if every input for (city, scale, benchmark) exists; reports what is missing.

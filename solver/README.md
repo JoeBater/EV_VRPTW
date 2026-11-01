@@ -53,6 +53,7 @@ cmake --build build
 ```bash
 ./build/release/solver/ev_vrptw            # runs exp1
 ./build/release/solver/ev_vrptw --exp 0    # re-simulates exp1's saved solutions
+./build/release/solver/ev_vrptw --year 2023   # weather year (default 2024; 2022–2025 available)
 ./build/release/solver/ev_vrptw --help
 ```
 
@@ -77,7 +78,7 @@ committed; generate the others with `dataprep/`.
 |---|---|
 | Instance CSV `data/processed/instances/<City>_<scale>_<benchmark>.csv` | `id,x,y,demand,ready_time,due_time,service_time,scaled_x,scaled_y,lat,lon,elevation` (first row is the depot; read by column position) |
 | Short paths `data/processed/short_paths/<benchmark>_short_paths.txt` | One line per pair, `from to: <steps>`; lines starting with `#` are ignored |
-| Weather CSV `data/weather/open-meteo/<City>-weather.csv` | Open-Meteo hourly data: `month,day,hour,temperature_2m,dew_point_2m,rain,...` |
+| Weather CSV `data/weather/open-meteo/<year>/<City>-weather-<year>.csv` | Open-Meteo hourly data: `month,day,hour,temperature_2m,dew_point_2m,rain,...` |
 
 ## TODO
 

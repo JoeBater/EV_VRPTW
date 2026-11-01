@@ -1,8 +1,9 @@
 """
 Hourly historical weather per city from the Open-Meteo archive API.
 
-Writes data/weather/open-meteo/<City>-weather.csv, one calendar year of hourly
-rows in UTC, in the column order the solver's Instance::readWeatherFile expects:
+Writes data/weather/open-meteo/<year>/<City>-weather-<year>.csv, one calendar
+year of hourly rows in UTC, in the column order the solver's
+Instance::readWeatherFile expects:
 
     month,day,hour,temperature_2m,dew_point_2m,rain,wind_speed_10m,
     wind_direction_10m,wind_gusts_10m,is_day
@@ -37,11 +38,11 @@ HOURLY_VARIABLES = [
 
 COLUMNS = ["month", "day", "hour"] + HOURLY_VARIABLES
 
-DEFAULT_YEAR = 2024   # the year of the original weather files
+DEFAULT_YEARS = [2022, 2023, 2024, 2025]
 
 
-def weather_path(paths, city_name):
-    return paths.weather_dir / f"{city_name}-weather.csv"
+def weather_path(paths, city_name, year):
+    return paths.weather_dir / str(year) / f"{city_name}-weather-{year}.csv"
 
 
 def fetch_hourly(lat, lon, year, retries=3):
@@ -85,8 +86,8 @@ def to_frame(payload):
     return df[COLUMNS]
 
 
-def download_city_weather(paths, city_name, lat, lon, year=DEFAULT_YEAR, force=False):
-    output_path = weather_path(paths, city_name)
+def download_city_weather(paths, city_name, lat, lon, year, force=False):
+    output_path = weather_path(paths, city_name, year)
     if output_path.exists() and not force:
         print(f"  {city_name}: exists, skipping (use --force to replace): {output_path}")
         return output_path
@@ -112,8 +113,8 @@ def parse_args(argv=None):
         description="Download hourly historical weather per city from Open-Meteo.")
     p.add_argument("--cities", nargs="+",
                    help="cities to fetch (default: all in cities.csv)")
-    p.add_argument("--year", type=int, default=DEFAULT_YEAR,
-                   help=f"calendar year to fetch (default: {DEFAULT_YEAR})")
+    p.add_argument("--years", nargs="+", type=int, default=DEFAULT_YEARS,
+                   help=f"calendar years to fetch (default: {' '.join(map(str, DEFAULT_YEARS))})")
     p.add_argument("--force", action="store_true",
                    help="replace existing files")
     p.add_argument("--data-dir", help="data root (default: <repo>/data or $EV_VRPTW_DATA)")
@@ -132,8 +133,9 @@ def main(argv=None):
     cities = load_cities(paths.cities_file, args.cities)
 
     for _, city in cities.iterrows():
-        download_city_weather(paths, city["city"], city["latitude"], city["longitude"],
-                              year=args.year, force=args.force)
+        for year in args.years:
+            download_city_weather(paths, city["city"], city["latitude"], city["longitude"],
+                                  year=year, force=args.force)
 
 
 if __name__ == "__main__":
