@@ -7,7 +7,6 @@
 #include "Route.hpp"
 #include "SolutionScore.hpp"
 #include "LNS.hpp"
-#include "LNSar.hpp"
 
 using namespace::std;
 

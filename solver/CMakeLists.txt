@@ -2,7 +2,6 @@
 add_library(ev_vrptw_core STATIC
     src/Instance.cpp
     src/LNS.cpp
-    src/LNSar.cpp
     src/MST.cpp
     src/Route.cpp
     src/SubStep.cpp

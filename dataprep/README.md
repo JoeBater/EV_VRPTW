@@ -121,7 +121,3 @@ dataprep/
 Otherwise the outputs were checked against the notebook's: all 30 Bath and Cambridge
 scale-5 instances match to within 1e-9, and the short paths are byte-identical.
 
-## Not yet migrated
-
-- `Last-mile-robots/clean_weather_files.ipynb` (EnergyPlus EPW + synthetic rain → `data/weather/cleaned/`).
-  The solver doesn't use these files.

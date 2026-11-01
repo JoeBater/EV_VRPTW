@@ -19,7 +19,6 @@ solver/
 | `Route` | One vehicle route. Simulates the route over time (arrival, service and departure times, lateness, loading) and its energy use (state-of-charge per step, using slope, load, speed, acceleration, regen braking, temperature-dependent HVAC and rain). |
 | `MST` | Shortest paths between pairs of customers, read from a `*_short_paths.txt` file. Legs are expanded into `SubStep`s. |
 | `LNS` | Large Neighbourhood Search: destroy and repair operators, 2-opt, quadrant-based moves. |
-| `LNSar` | LNS variant for adaptive routing. Currently a near-copy of `LNS`; due to be merged. |
 | `*.hpp` structs | Small value types: `SoCEntry`, `LegResult`, `StepResult`, `MinuteResult`, `SolutionScore`, `StoreData`, `StoreCount`, `Quadrant`. |
 
 ### Experiments (`ev_vrptw`)
@@ -70,7 +69,7 @@ committed; generate the others with `dataprep/`.
 | LNS progress per iteration | `searchProgress.csv` |
 | Solution (exp1) | `solutions/flatland_<scale>/<benchmark>/route_log_<month>.txt` |
 | Detailed simulation | `solutions/flatland_<scale>/<benchmark>/[<City>/]detailed_route_log_<month>[_<day>].csv` |
-| Route snapshots (optional) | the `videoDir` passed to `LNS`/`LNSar`: `new/<it>.txt`, `best/<it>.txt` |
+| Route snapshots (optional) | the `videoDir` passed to `LNS`: `new/<it>.txt`, `best/<it>.txt` |
 
 ## Inputs
 
@@ -84,6 +83,5 @@ committed; generate the others with `dataprep/`.
 
 - [x] Replace hard-coded `C:/Users/...` paths with a data root and an output root
 - [ ] Choose the experiment and its parameters from the command line or a config file, not constructors
-- [ ] Merge `LNS` and `LNSar`
 - [ ] Tidy: remove `using namespace std` from headers and `<bits/stdc++.h>` from `Route.hpp`
 - [ ] Add tests (e.g. a small instance with a known route cost)

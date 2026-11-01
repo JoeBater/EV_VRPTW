@@ -91,13 +91,6 @@ exp1::exp1()
                 finalCost = optimizer.runLargeNeighbourSearch(maxIterations);
             }
 
-            if (METHOD == "LNSar") {
-                cout << "running LNS adaptive routing" << endl;
-                int maxIterations = 0.25e6;
-                LNSar optimizer(&instance, searchProgressFile);
-                finalCost = optimizer.runAdaptiveRouteLargeNeighbourSearch(maxIterations);
-            }
-
             //SolutionScore
             cout << finalCost.total_cost << endl;
 
