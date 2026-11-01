@@ -64,6 +64,25 @@ Options: `--cities`, `--benchmarks`, `--scales` (km, default 5), `--plots none|f
 
 Two sample cities with all 16 benchmarks take about 10 seconds once the DEMs are cached.
 
+## Weather
+
+```bash
+PYTHONPATH=src python -m ev_vrptw_dataprep.weather --cities Bath Cambridge
+```
+
+Downloads one calendar year (default **2024**, the year of the original files) of hourly
+data per city from the [Open-Meteo archive API](https://open-meteo.com/en/docs/historical-weather-api)
+to `data/weather/open-meteo/<City>-weather.csv`. It's free and needs no key. Existing files are
+kept unless you pass `--force`. Other options: `--year` and `--data-dir`.
+
+Columns, all in UTC: `month,day,hour,temperature_2m,dew_point_2m,rain,wind_speed_10m,wind_direction_10m,wind_gusts_10m,is_day`.
+The solver reads month, day, hour, temperature and rain by position.
+
+> **Known difference from the original files.** Today's API gives the same rain, wind and
+> grid cell as the committed Bath and Cambridge files, but temperature and dew point are
+> consistently about 0.6 °C lower. No request option tried (elevation, model) reproduces
+> the old values exactly. The committed files have not been regenerated.
+
 ## Tests
 
 ```bash
@@ -82,7 +101,8 @@ dataprep/
 │   ├── elevation.py    DEM sampling and diagnostics
 │   ├── writers.py      CSV / short-path / JSON writers
 │   ├── plots.py        MST and elevation plot
-│   └── pipeline.py     generate_instance, generate_short_paths, CLI
+│   ├── pipeline.py     generate_instance, generate_short_paths, CLI
+│   └── weather.py      Open-Meteo download, CLI
 ├── notebooks/
 │   └── copernicus-elevation-model.ipynb   original notebook this package came from
 └── tests/
@@ -103,6 +123,5 @@ scale-5 instances match to within 1e-9, and the short paths are byte-identical.
 
 ## Not yet migrated
 
-- **Weather**: the Open-Meteo download script that produced `data/weather/open-meteo/` has
-  been lost and needs rewriting.
-- `Last-mile-robots/clean_weather_files.ipynb` (EnergyPlus EPW + synthetic rain → `cleaned/`).
+- `Last-mile-robots/clean_weather_files.ipynb` (EnergyPlus EPW + synthetic rain → `data/weather/cleaned/`).
+  The solver doesn't use these files.

@@ -53,3 +53,7 @@ class Paths:
     @property
     def plots_dir(self):
         return self.processed_dir / "plots"
+
+    @property
+    def weather_dir(self):
+        return self.processed_dir.parent / "weather" / "open-meteo"
