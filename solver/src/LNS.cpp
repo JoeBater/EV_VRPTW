@@ -1,7 +1,10 @@
 #include "LNS.hpp"
 
+#include <filesystem>
+
 LNS::LNS(Instance* instance,
-         string plFile)
+         string plFile,
+         string vdDir)
 {
     inst = instance;
     stagnationCounter = 0;
@@ -15,6 +18,8 @@ LNS::LNS(Instance* instance,
     }
     
     progressLogFile = plFile;
+    videoDir = vdDir;
+    VIDEO = !videoDir.empty();
 }
 
 
@@ -32,8 +37,12 @@ SolutionScore LNS::runLargeNeighbourSearch(int iterations) {
     inst->calculateRoutes();
     SolutionScore bsf = evaluateSolution();
     
-    string best_dir = "C:/Users/user/ML/Optimisation/VRPTW/EV_simulations/video/best/";
-    string new_dir = "C:/Users/user/ML/Optimisation/VRPTW/EV_simulations/video/new/";
+    string best_dir = videoDir + "/best/";
+    string new_dir = videoDir + "/new/";
+    if (VIDEO) {
+        std::filesystem::create_directories(best_dir);
+        std::filesystem::create_directories(new_dir);
+    }
     
     
     for (int it = 0; it < iterations; it++) {

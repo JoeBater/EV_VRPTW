@@ -31,3 +31,9 @@ add_executable(ev_vrptw
 
 target_include_directories(ev_vrptw PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/experiments)
 target_link_libraries(ev_vrptw PRIVATE ev_vrptw_core)
+
+# Default data/results roots (overridable at runtime: --data/--results or EV_VRPTW_DATA/EV_VRPTW_RESULTS)
+target_compile_definitions(ev_vrptw PRIVATE
+    EV_VRPTW_DEFAULT_DATA_DIR="${PROJECT_SOURCE_DIR}/data"
+    EV_VRPTW_DEFAULT_RESULTS_DIR="${PROJECT_SOURCE_DIR}/results"
+)

@@ -15,8 +15,11 @@ using namespace std;
 class LNSar
 {
 public:
+    // videoDir: if non-empty, write per-iteration route snapshots to
+    // <videoDir>/new/ and <videoDir>/best/ (for animation)
     LNSar(Instance* instance,
-        string plFile);
+        string plFile,
+        string videoDir = "");
     
     ~LNSar();
 
@@ -58,11 +61,12 @@ private:
     
     std::vector<IterationLog> progressLog;
     string progressLogFile;
+    string videoDir;
     
     int VERBOSE = 0;
     int DEBUG = 0;
     int MONITOR = 1;
-    int VIDEO = 0;
+    int VIDEO = 0;   // enabled by passing videoDir
     
     SolutionScore evaluateSolution();
     

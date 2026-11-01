@@ -43,8 +43,8 @@ cmake --build --preset release
 
 There is also a `debug` preset. See [solver/README.md](solver/README.md).
 
-> **Note:** experiment input and output paths are still hard-coded to the original
-> development machine. Making them configurable is next on the list.
+The Bath and Cambridge sample data is committed, so this runs straight after cloning.
+Outputs go to `results/`.
 
 ## Data
 
