@@ -65,8 +65,16 @@ class Route {
         //const double ENERGY_PER_KM_KWH = 0.1;
         const double ENERGY_PER_KM_KWH = 0.4;
         const double BASE_SOC = ENERGY_PER_KM_KWH / 1000.0 / FULL_BATTERY_KWH;
-        const bool REGEN_BRAKING = true;
-        const double BASE_REGEN = 0.0001;
+        inline static bool REGEN_BRAKING = true; // switched off with main.cpp --no-regen
+        inline static int DAY_START_HOUR = 0;    // clock hour of minute 0, for weather (main.cpp --start-hour)
+
+        // terrain: gravity on each ~100 m segment of the MST edges
+        const double VAN_MASS_KG = 2500.0;      // e.g. eSprinter, empty
+        const double GRAVITY = 9.81;
+        const double J_PER_KWH = 3.6e6;
+        const double DRIVE_EFFICIENCY = 0.9;    // battery -> wheel
+        const double REGEN_EFFICIENCY = 0.6;    // wheel -> battery, braking
+        const double MAX_GRADE = 0.25;          // the DEM is a surface model (buildings, trees)
 
         int sum(const vector<int>& vec) ;
         double sum(const vector<double>& vec) ;
@@ -77,15 +85,12 @@ class Route {
         
         double getHourlyTemperature(int timestamp, vector<double> temperatures);
         double getHourlyRainfall(int timestamp, vector<double> rainfall);
-        double slopeFactor(double slope);
         double temperatureFactor(double temp);
         double loadFactor(int load);
         std::pair<double, double> speedAndFactor(double distance);
         double speedFactor(double speed);
         double speedModifier(double slope, double rain_intensity, int load_kg);
         double computeAccelerationImpulse(double load_kg, double target_speed_kmh);
-        double computeRegen(double slope, double speed, double mass);
-        double regenBrakingGain(double slope, double speed, double load_factor, double rainfall);
         int adjustedServiceTime(int base_minutes, double rainfall_mm_per_hr);
         
         
@@ -93,6 +98,11 @@ class Route {
         int return_to_depot_time;
         
     public:
+        static void setRegenBraking(bool on) { REGEN_BRAKING = on; }
+        static bool regenBraking() { return REGEN_BRAKING; }
+        static void setDayStartHour(int h) { DAY_START_HOUR = h; }
+        static int dayStartHour() { return DAY_START_HOUR; }
+
         Route(); // default constructor - empty route
         ~Route();
         Route(vector<int> r); // constructor to initialize the route with a vector of integers

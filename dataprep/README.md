@@ -15,7 +15,7 @@ For each **city × scale × benchmark**:
    converts every site to latitude and longitude.
 4. **MST**: builds a Prim minimum spanning tree over the sites. Vehicles travel along it.
 5. **Elevation**: looks up the elevation of every site, and of points every 100 m along each
-   MST edge, to give per-substep slopes.
+   MST edge, giving the terrain profile the solver drives over.
 
 Plus, once per **benchmark**:
 
@@ -29,12 +29,15 @@ Plus, once per **benchmark**:
 |---|---|---|---|
 | Instance | `data/processed/instances/<City>_<scale>_<benchmark>.csv` | solver | sample cities |
 | Short paths | `data/processed/short_paths/<benchmark>_short_paths.txt` | solver (`MST`) | yes |
+| Edge profiles | `data/processed/edge_profiles/<City>_<scale>_<benchmark>.csv` | solver (`MST`) | sample cities |
 | Edge samples | `data/processed/edge_samples/<City>_<scale>_<benchmark>_edge_samples.json` | analysis | no |
 | MST plot | `data/processed/plots/<City>_<scale>_<benchmark>_mst.png` | you | no |
 | DEM cache | `data/dem/<City>/` | pipeline | no |
 
 Instance columns: `id,x,y,demand,ready_time,due_time,service_time,scaled_x,scaled_y,lat,lon,elevation`.
 Short-path lines: `from to: step step …` (0-based site indices, with the endpoints excluded).
+Edge-profile rows: `start,end,length,dz`, one per ~100 m segment of each MST edge, in order
+from `start` to `end` (the solver walks them in reverse, with `dz` negated, for `end` → `start`).
 
 ## Usage
 

@@ -11,7 +11,8 @@ from .dem import dem_path_for, ensure_dem
 from .elevation import diagnose_dem, extract_elevations
 from .geometry import (all_pairs_short_paths, compute_horizontal_distances,
                        compute_slopes, prim_mst, sample_edge, xy_to_latlon)
-from .writers import write_edge_samples, write_scaled_instance, write_short_paths
+from .writers import (write_edge_profiles, write_edge_samples, write_scaled_instance,
+                      write_short_paths)
 
 # ============================================================
 # INPUTS
@@ -87,10 +88,11 @@ def generate_instance(
     instance_path     = paths.instances_dir / f"{benchmark}.csv"
     scaled_csv        = paths.scaled_instances_dir / f"{stem}.csv"
     edge_samples_file = paths.edge_samples_dir / f"{stem}_edge_samples.json"
+    edge_profile_file = paths.edge_profiles_dir / f"{stem}.csv"
     png_path          = paths.plots_dir / f"{stem}_mst.png"
     dem_path          = dem_path_for(paths.dem_dir, city_name)
 
-    for d in (paths.scaled_instances_dir, paths.edge_samples_dir):
+    for d in (paths.scaled_instances_dir, paths.edge_samples_dir, paths.edge_profiles_dir):
         os.makedirs(d, exist_ok=True)
 
     # --- 1. Load and normalise raw Solomon instance ---
@@ -166,6 +168,8 @@ def generate_instance(
     # --- 5. Write outputs ---
     write_scaled_instance(df, scaled_csv)
     write_edge_samples(edge_samples, edge_samples_file)
+    if "elevations" in edge_samples[0]:
+        write_edge_profiles(edge_samples, edge_profile_file)
 
     # --- 6. Visualise ---
     if visualise:

@@ -18,7 +18,8 @@ using namespace std;
 class Instance
 {
 public:
-    Instance(string instanceFile, string spanningTreeFile, string weatherFile, int vc, int nr);
+    Instance(string instanceFile, string spanningTreeFile, string weatherFile, int vc, int nr,
+             string edgeProfileFile = "");
     ~Instance();
 
     void readInstanceFile(string filename);
@@ -67,6 +68,7 @@ public:
     const int& getVehicleCapacity() const;
     
     void readSpanningTree(string filename);
+    void readEdgeProfiles(string filename);
     void readWeatherFile(string filename);
     void displayWeatherData();
     
@@ -90,6 +92,7 @@ public:
     void displayRoutes();
     int getTotalDistance();
     int getTotalLate();
+    int getTotalTardiness();  // minutes late, summed over all stops and depot returns
     const std::vector<int>& getLateFlags(int routeIndex) const {
         return routes[routeIndex].getLateFlags();
     }

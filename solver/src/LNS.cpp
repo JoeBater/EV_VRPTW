@@ -138,15 +138,16 @@ SolutionScore LNS::evaluateSolution() {
     inst->calculateRoutes();
     
     int dist = inst->getTotalDistance();
-    int late = inst->getTotalLate();  // number of sites late (or you could use total tardiness)
+    int late = inst->getTotalLate();  // number of sites late
+    int tardiness = inst->getTotalTardiness();
     int overload = inst->getTotalOverload();
-    //int penalty = 10000;
+    int late_penalty = (int)(w_lateness * late + w_tardiness * tardiness);
 
     return {
         (w_distance * dist),
-        (int)(w_lateness * late),
+        late_penalty,
         (int)(w_capacity * overload),
-        (w_distance * dist) + (int)(w_lateness * late) + (int)(w_capacity * overload)
+        (w_distance * dist) + late_penalty + (int)(w_capacity * overload)
     };
 }
 

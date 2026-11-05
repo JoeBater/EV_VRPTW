@@ -1,5 +1,7 @@
 #include "MST.hpp"
 
+#include <algorithm>
+
 MST::MST()
 {
 }
@@ -59,6 +61,7 @@ MST::~MST()
 
 void MST::clear() {
     steps.clear();
+    profiles.clear();
 }
 
 void MST::setName(string n) {
@@ -77,4 +80,53 @@ std::vector<int> MST::getSteps(int ss, int ff) const {
     } 
     
     return {}; // implies direct traversal (i → j)
+}
+
+void MST::readEdgeProfiles(string filename)
+{
+    profiles.clear();
+
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << "Error: Unable to open file <" << filename << ">!" << std::endl;
+        return;
+    }
+
+    // start,end,length,dz - one row per segment, in order from start to end
+    std::string line;
+    std::getline(file, line);  // header
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        std::replace(line.begin(), line.end(), ',', ' ');
+        std::istringstream row(line);
+        int from, to;
+        EdgeSegment segment;
+        if (!(row >> from >> to >> segment.length >> segment.dz)) {
+            std::cerr << "Malformed line: " << line << std::endl;
+            continue;
+        }
+        profiles[{from, to}].push_back(segment);
+    }
+    file.close();
+
+    // the reverse direction walks the same segments backwards, downhill for uphill
+    std::vector<std::pair<int, int>> forward;
+    for (const auto& [edge, _] : profiles) forward.push_back(edge);
+    for (const auto& [from, to] : forward) {
+        std::vector<EdgeSegment> reverse(profiles[{from, to}].rbegin(), profiles[{from, to}].rend());
+        for (auto& segment : reverse) segment.dz = -segment.dz;
+        profiles[{to, from}] = reverse;
+    }
+}
+
+const std::vector<EdgeSegment>* MST::getSegments(int from, int to) const
+{
+    auto it = profiles.find({from, to});
+    return it != profiles.end() ? &it->second : nullptr;
+}
+
+void MST::flattenProfiles()
+{
+    for (auto& [_, segments] : profiles)
+        for (auto& segment : segments) segment.dz = 0.0;
 }

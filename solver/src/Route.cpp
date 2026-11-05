@@ -112,30 +112,6 @@ double Route::getDistance() {
     return distances[distances.size()-1];
 }
 
-double Route::slopeFactor(double slope) {
-    if (slope > 0.1) return 1.3;      // Steep uphill
-    else if (slope >= 0.075) return 1.25; // Mild uphill
-    else if (slope >= 0.05) return 1.17;  // noticeable uphill
-    else if (slope >= 0.03) return 1.1;  // moderate uphill
-    else if (slope >= 0.015) return 1.07; // mild
-    else return 1.0;
-}
-
-double Route::regenBrakingGain(double slope, double speed, double load_factor, double rainfall) {
-    if (!REGEN_BRAKING) return 0.0;
-
-    // No regen if speed is too low or slope is flat
-    if (slope >= -0.02 || speed < 5.0) return 0.0;
-
-    // Rainfall penalty: wet roads reduce regen efficiency
-    double weather_penalty = (rainfall > 2.0) ? 0.5 : 1.0;
-
-    // Base regen model: steeper slope and heavier load = more gain
-    double regen_base = BASE_REGEN * std::abs(slope) * speed * load_factor;
-
-    return regen_base * weather_penalty;
-}
-
 double Route::temperatureFactor(double temp) {
     if (temp < 0) return 1.25;       // 25% more energy needed
     else if (temp < 10) return 1.15;
@@ -209,105 +185,139 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
     
     is_feasible = (loadings[0] <= capacity);
     
-    auto simulateStep = [&](int step_from, int step_to, int leg_to, int load, int& current_minute, bool apply_impulse) -> StepResult 
-    {
-        double step_soc_used = 0.0;
-        double step_soc_regenerated = 0.0;
-        int step_dist = distanceMatrix[step_from][step_to];
-        double step_slope = slopeMatrix[step_from][step_to];
-        double load_factor = loadFactor(load);
-        auto [notional_speed, _] = speedAndFactor(step_dist);
-        
-        while (step_dist > 0.0) {
-            
-            auto [hr, _] = getSimulationTimeHoursMins(current_minute);
-            
-            double temp_factor = temperatureFactor(temperatures[hr]);
-            double speed_mod = speedModifier(step_slope, rainfall[hr], load);
-            double distance_minute = ((notional_speed * speed_mod) / 60.0) * 1000.0;
-            double speed = distance_minute * 60.0 / 1000.0;
-            double speed_factor = speedFactor(speed);
-            
-            // LATER - we want to change this to bring regen braking gains out explicitly 
-            double minute_slope_factor = slopeFactor(step_slope);
-            if (step_slope < -0.01 && rainfall[hr] > 2.0)
-                minute_slope_factor = 1.0;
-            
-            double soc_used = BASE_SOC * distance_minute * temp_factor * minute_slope_factor * speed_factor * load_factor;
-            if (apply_impulse) {
-                soc_used += computeAccelerationImpulse(load, speed);
-                apply_impulse = false;
+    // A leg is walked as one chain of terrain segments - the ~100 m profiles of the
+    // MST edges it uses, or one uniform-slope segment per edge when there is no
+    // profile - so time and energy follow the distance actually covered. Only the
+    // arrival is rounded up to a whole minute.
+    struct LegSegment {
+        double length;          // metres
+        double dz;              // metres climbed
+        int step_to;            // MST node at the end of this segment's edge
+        int step_distance;      // length of that edge
+        double notional_speed;  // km/h before slope/rain/load modifiers
+        bool step_start;        // first segment of an MST edge
+    };
+    vector<LegSegment> segments;
+
+    auto buildLegSegments = [&](int from, int to) -> int {
+        segments.clear();
+        vector<int> nodes = spanning_tree.getSteps(from, to);
+        nodes.insert(nodes.begin(), from);
+        nodes.push_back(to);
+
+        int leg_distance = 0;
+        for (size_t k = 0; k + 1 < nodes.size(); k++) {
+            int a = nodes[k];
+            int b = nodes[k+1];
+            int step_dist = distanceMatrix[a][b];
+            if (step_dist <= 0) continue;
+            leg_distance += step_dist;
+            auto [notional_speed, _] = speedAndFactor(step_dist);
+
+            const vector<EdgeSegment>* profile = spanning_tree.getSegments(a, b);
+            if (profile == nullptr || profile->empty()) {
+                segments.push_back({(double)step_dist, slopeMatrix[a][b] * step_dist, b, step_dist, notional_speed, true});
+                continue;
             }
-            double soc_regen = regenBrakingGain(step_slope, speed, load_factor, rainfall[hr]);
-            soc_used -= soc_regen;
-            step_soc_regenerated += soc_regen;
+            double profile_length = 0.0;
+            for (const auto& s : *profile) profile_length += s.length;
+            double stretch = (profile_length > 0.0) ? step_dist / profile_length : 1.0;  // match the distance matrix
+            bool first = true;
+            for (const auto& s : *profile) {
+                if (s.length <= 0.0) continue;
+                segments.push_back({s.length * stretch, s.dz, b, step_dist, notional_speed, first});
+                first = false;
+            }
+        }
+        return leg_distance;
+    };
 
-            cumulative_soc -= soc_used;
-            step_soc_used += soc_used;
+    auto simulateLeg = [&](int from, int to, int load, int& current_minute, bool apply_impulse) -> LegResult
+    {
+        LegResult leg_result;
+        leg_result.distance = buildLegSegments(from, to);
+        leg_result.soc_used = 0.0;
+        leg_result.soc_regen = 0.0;
+        leg_result.step_count = 0;
 
+        double load_factor = loadFactor(load);
+        double mass_kg = VAN_MASS_KG + load * LOAD_KG_CONV;
+
+        size_t k = 0;            // current segment
+        double covered = 0.0;    // metres into segments[k]
+        bool entering = true;    // about to start segments[k]
+
+        while (k < segments.size()) {
+            auto [hr, _] = getSimulationTimeHoursMins(current_minute);
+            double temp_factor = temperatureFactor(temperatures[hr]);
+            // wet roads: less of the braking goes through the motor
+            double regen_efficiency = (rainfall[hr] > 2.0) ? 0.5 * REGEN_EFFICIENCY : REGEN_EFFICIENCY;
+
+            double minutes_left = 1.0;
+            double minute_distance = 0.0;
+            double minute_dz = 0.0;
+            double minute_used = 0.0;
+            double minute_regen = 0.0;
+
+            while (k < segments.size() && minutes_left > 1e-9) {
+                const LegSegment& seg = segments[k];
+                double grade = std::clamp(seg.dz / seg.length, -MAX_GRADE, MAX_GRADE);
+                double speed = seg.notional_speed * speedModifier(grade, rainfall[hr], load);
+                double metres_per_minute = speed * 1000.0 / 60.0;
+
+                if (entering) {
+                    if (seg.step_start && apply_impulse) {
+                        minute_used += computeAccelerationImpulse(load, speed);
+                    }
+                    if (seg.step_start && k > 0) leg_result.step_count++;
+                    entering = false;
+                }
+
+                double d = std::min(seg.length - covered, metres_per_minute * minutes_left);
+
+                // level-road energy (battery side), plus gravity at the wheel:
+                // climbing costs m.g.dz through the drivetrain; descending first
+                // offsets rolling/aero losses, and any surplus is regenerated
+                double flat = BASE_SOC * d * temp_factor * speedFactor(speed) * load_factor;
+                double gravity = mass_kg * GRAVITY * grade * d / J_PER_KWH / FULL_BATTERY_KWH;
+                double wheel = flat * DRIVE_EFFICIENCY + gravity;
+                if (wheel >= 0.0) {
+                    minute_used += wheel / DRIVE_EFFICIENCY;
+                } else if (REGEN_BRAKING) {
+                    minute_regen += -wheel * regen_efficiency;
+                }
+
+                covered += d;
+                minutes_left -= d / metres_per_minute;
+                minute_distance += d;
+                minute_dz += grade * d;
+
+                if (seg.length - covered < 1e-6) {
+                    k++;
+                    covered = 0.0;
+                    entering = true;
+                }
+            }
+
+            double net = minute_used - minute_regen;
+            cumulative_soc -= net;
+            leg_result.soc_used += net;
+            leg_result.soc_regen += minute_regen;
+
+            const LegSegment& here = segments[std::min(k, segments.size() - 1)];
+            double minutes_driven = 1.0 - minutes_left;
             SoCEntry soc {
-                route_number, current_minute, soc_used, soc_regen, cumulative_soc, "driving", "-",
-                speed, distance_minute, distanceMatrix[step_from][step_to], step_slope, temperatures[hr], rainfall[hr], load,
-                leg_to, step_to
+                route_number, current_minute, net, minute_regen, cumulative_soc, "driving", "-",
+                minute_distance * 60.0 / 1000.0 / minutes_driven, minute_distance, here.step_distance,
+                minute_dz / minute_distance, temperatures[hr], rainfall[hr], load,
+                to, here.step_to
             };
             soc_detail.push_back(soc);
-        
-            step_dist -= distance_minute;
+
             current_minute++;
         }
 
-        StepResult result;
-        result.soc_used = step_soc_used;
-        result.soc_regen = step_soc_regenerated;
-        result.distance = total_distance;
-        result.final_minute = current_minute;
-        result.distance = distanceMatrix[step_from][step_to];
-        
-        return result;
-    };
-            
-    auto simulateLeg = [&](int from, int to, int load, int& current_minute, bool apply_impulse) -> LegResult 
-    {
-        vector<int> steps = spanning_tree.getSteps(from, to);
-        
-        LegResult leg_result;
-        leg_result.distance = 0;
-        leg_result.soc_used = 0.0;
-        leg_result.soc_regen = 0.0;
         leg_result.final_minute = current_minute;
-        leg_result.step_count = 0;
-        
-        if (steps.size() == 0) {
-            StepResult step_result = simulateStep(from, to, to, load, current_minute, apply_impulse);
-            leg_result.distance += step_result.distance;
-            leg_result.soc_used += step_result.soc_used - step_result.soc_regen;
-            leg_result.soc_regen += step_result.soc_regen;
-            leg_result.final_minute = step_result.final_minute;
-            
-        } else {
-            
-            StepResult step_result = simulateStep(from, steps[0], to, load, current_minute, apply_impulse);
-            leg_result.distance += step_result.distance;
-            leg_result.soc_used += step_result.soc_used - step_result.soc_regen;
-            leg_result.soc_regen += step_result.soc_regen;
-            
-            for (size_t s = 0; s < steps.size()-1; s++) {
-                step_result = simulateStep(steps[s], steps[s+1], to, load, current_minute, apply_impulse);
-                leg_result.distance += step_result.distance;
-                leg_result.soc_used += step_result.soc_used - step_result.soc_regen;
-                leg_result.soc_regen += step_result.soc_regen;
-                leg_result.step_count += 1;
-            }
-            
-            step_result = simulateStep(steps[steps.size()-1], to, to, load, current_minute, apply_impulse);
-            leg_result.distance += step_result.distance;
-            leg_result.soc_used += step_result.soc_used - step_result.soc_regen;
-            leg_result.soc_regen += step_result.soc_regen;
-            leg_result.final_minute = step_result.final_minute;
-            leg_result.step_count += 1;
-        }
-
-        
         return leg_result;
     };
 
@@ -398,7 +408,10 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
         arrival_times[final_idx] = leg_result.final_minute;
         soc_summary[final_idx] = soc_summary[final_idx - 1] - leg_result.soc_used;
 
-        // lateness checks
+        // lateness checks - reset first, as this runs once per departure time tried
+        std::fill(late_flags.begin(), late_flags.end(), 0);
+        std::fill(lateness_per_stop.begin(), lateness_per_stop.end(), 0);
+        std::fill(earliness_per_stop.begin(), earliness_per_stop.end(), 0);
         total_late = 0;
         is_feasible = 1;
         for (size_t i = 0; i < r.size(); i++) {
@@ -743,9 +756,11 @@ int Route::getRouteFeasibility() const {
 
 tuple<int, int> Route::getSimulationTimeHoursMins(int t) {
     
-    // get hours and minutes -> will go wrong if over 1440!
-    int h = t / 60;
-    int m = t % 60;
+    // clock time of simulation minute t (minute 0 = DAY_START_HOUR); the hour
+    // indexes the day's 24 hourly weather values, so it is held at 23 past midnight
+    int clock = t + DAY_START_HOUR * 60;
+    int h = std::min(clock / 60, 23);
+    int m = clock % 60;
     return make_tuple(h, m);
      
     //return make_tuple(23, 59); //  dummy value for test routes
@@ -802,8 +817,7 @@ int Route::getEndTime() const {
 }
 
 double Route::computeAccelerationImpulse(double load, double target_speed_kmh) {
-    const double base_mass_kg = 2500.0;   // e.g. eSprinter empty
-    double total_mass_kg = base_mass_kg + (load * LOAD_KG_CONV);
+    double total_mass_kg = VAN_MASS_KG + (load * LOAD_KG_CONV);
 
     double v = target_speed_kmh / 3.6;  // convert km/h to m/s
     double energy_joules = 0.5 * total_mass_kg * v * v;
@@ -849,12 +863,6 @@ int Route::getTotalDistance() const {
     }
     return 0;
 }
-
-double Route::computeRegen(double slope, double speed, double mass) {
-    return 0.0;
-}
-
-
 
 double Route::getLatenessPenaltyMultiplier() {
     return lateness_penalty_multiplier;

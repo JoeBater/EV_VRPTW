@@ -55,6 +55,19 @@ inline std::string shortPathsFile(const std::string& benchmark)
     return (dataRoot() / "processed" / "short_paths" / (benchmark + "_short_paths.txt")).string();
 }
 
+// ~100 m terrain profile along each MST edge; optional - without it the solver
+// uses one slope per edge from the site elevations
+inline std::string edgeProfileFile(const std::string& city, int scale, const std::string& benchmark)
+{
+    std::string file = (dataRoot() / "processed" / "edge_profiles" /
+                        (city + "_" + std::to_string(scale) + "_" + benchmark + ".csv")).string();
+    if (!fs::exists(file)) {
+        std::cerr << "no edge profile (using site-to-site slopes): " << file << "\n";
+        return "";
+    }
+    return file;
+}
+
 // Hourly weather for the selected year (main.cpp --year, default 2024)
 inline std::string weatherFile(const std::string& city)
 {

@@ -28,6 +28,21 @@ def write_short_paths(short_paths, output_path):
     print(f"  Written: {output_path}")
 
 
+def write_edge_profiles(edge_samples, output_path):
+    """
+    Format: CSV 'start,end,length,dz', one row per ~100 m segment of each
+    MST edge, in order from start to end. Matches C++ MST::readEdgeProfiles.
+    The solver walks the segments in reverse (negating dz) for end -> start.
+    """
+    with open(output_path, 'w') as f:
+        f.write("start,end,length,dz\n")
+        for edge in edge_samples:
+            for length, e0, e1 in zip(edge["distances"],
+                                      edge["elevations"][:-1], edge["elevations"][1:]):
+                f.write(f"{edge['start']},{edge['end']},{length:.2f},{e1 - e0:.3f}\n")
+    print(f"  Written: {output_path}")
+
+
 def write_edge_samples(edge_samples, output_path):
     def clean(obj):
         if isinstance(obj, (np.floating, np.float32, np.float64)):

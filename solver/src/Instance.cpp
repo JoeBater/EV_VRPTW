@@ -1,10 +1,14 @@
 #include "Instance.hpp"
 
-Instance::Instance(string instanceFile, string spanningTreeFile, string weatherFile, int vc, int nr)
+Instance::Instance(string instanceFile, string spanningTreeFile, string weatherFile, int vc, int nr,
+                   string edgeProfileFile)
 {
     setVehicleCapacity(vc);
     readInstanceFile(instanceFile);
     readSpanningTree(spanningTreeFile);
+    if (!edgeProfileFile.empty()) {
+        readEdgeProfiles(edgeProfileFile);
+    }
     readWeatherFile(weatherFile);
     //displayWeatherData();
     
@@ -138,6 +142,13 @@ void Instance::readSpanningTree(string filename) {
     }
     spanning_tree.clear();
     spanning_tree.readSpanningTree(filename);
+}
+
+void Instance::readEdgeProfiles(string filename) {
+    if (VERBOSE) {
+        cout << "reading edge profiles <" + filename + ">\n";
+    }
+    spanning_tree.readEdgeProfiles(filename);
 }
 
 MST Instance::getSpanningTree() {
@@ -330,6 +341,16 @@ int Instance::getTotalLate() {
     return total_late;
 }
 
+int Instance::getTotalTardiness() {
+    int total_tardiness = 0;
+    for (const auto& route : routes) {
+        for (int minutes : route.getLatenessPerStop()) {
+            total_tardiness += minutes;
+        }
+    }
+    return total_tardiness;
+}
+
 int Instance::getTotalOverload() {
     int total_overload = 0;
     for (size_t t = 0; t < routes.size(); t++) {
@@ -514,6 +535,7 @@ void Instance::flattenCity() {
             slopeMatrix[i][j] = 0.0;
         }
     }
+    spanning_tree.flattenProfiles();
 }
 
 void Instance::displayDistanceMatrix() {

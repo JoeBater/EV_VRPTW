@@ -15,6 +15,14 @@ exp0::exp0()
 
     int scale = 5;
 
+    // Variant runs go to <City>_noregen/, <City>_start08/ etc. beside the default run
+    string variant = Route::regenBraking() ? "" : "_noregen";
+    if (Route::dayStartHour() != 0) {
+        char start[16];
+        std::snprintf(start, sizeof(start), "_start%02d", Route::dayStartHour());
+        variant += start;
+    }
+
     for (size_t b = 0; b < benchmarks.size(); b++) {
         string benchmark = benchmarks[b];
 
@@ -40,13 +48,13 @@ exp0::exp0()
         cities.push_back("Plymouth");
         cities.push_back("Southampton");
 
-//        cities.push_back("Aberwystwyth");
+//        cities.push_back("Aberystwyth");
         cities.push_back("Bath");
         cities.push_back("Cambridge");
 //        cities.push_back("Carlisle");
 //        cities.push_back("Chichester");
 //        cities.push_back("Derry");
-//        cities.push_back("Inverness");
+        cities.push_back("Inverness");
 //        cities.push_back("Lancaster");
 //        cities.push_back("Newcastle");
 //        cities.push_back("Wrexham");
@@ -63,12 +71,13 @@ exp0::exp0()
             string cityFile = paths::instanceFile(city, scale, benchmark);
             string treeFile = paths::shortPathsFile(benchmark);
             string weatherFile = paths::weatherFile(city);
-            string cityDir = paths::resultsDir("solutions/flatland_" + std::to_string(scale) + "/" + benchmark + "/" + city);
+            string cityDir = paths::resultsDir("solutions/flatland_" + std::to_string(scale) + "/" + benchmark + "/" + city + variant);
 
             int NUM_VEHICLES = 20;
             int VEHICLE_CAPACITY = 200;
 
-            Instance instance(cityFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES);
+            Instance instance(cityFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES,
+                              paths::edgeProfileFile(city, scale, benchmark));
 
             instance.readRoutesFromFile(solutionFile);
             //instance.setRoutes(solution);

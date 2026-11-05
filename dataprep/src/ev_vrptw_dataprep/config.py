@@ -51,6 +51,10 @@ class Paths:
         return self.processed_dir / "edge_samples"
 
     @property
+    def edge_profiles_dir(self):
+        return self.processed_dir / "edge_profiles"
+
+    @property
     def plots_dir(self):
         return self.processed_dir / "plots"
 

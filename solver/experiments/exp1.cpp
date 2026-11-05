@@ -48,7 +48,8 @@ exp1::exp1()
             int VEHICLE_CAPACITY = 200;
             //string solutionFile = "C:/Users/user/ML/Optimisation/VRPTW/solomon_solutions/Cambridge/r101/Cambridge_scaled_5_r101_elev.txt";
 
-            Instance instance(instanceFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES);
+            Instance instance(instanceFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES,
+                              paths::edgeProfileFile(city, scale, benchmark));
             cerr << "declared instance" << endl;
             SolutionScore finalCost;
 
@@ -124,13 +125,13 @@ exp1::exp1()
         cities.push_back("Plymouth");
         cities.push_back("Southampton");
 
-//        cities.push_back("Aberwystwyth");
+//        cities.push_back("Aberystwyth");
         cities.push_back("Bath");
         cities.push_back("Cambridge");
 //        cities.push_back("Carlisle");
 //        cities.push_back("Chichester");
 //        cities.push_back("Derry");
-//        cities.push_back("Inverness");
+        cities.push_back("Inverness");
 //        cities.push_back("Lancaster");
 //        cities.push_back("Newcastle");
 //        cities.push_back("Wrexham");
@@ -153,7 +154,8 @@ exp1::exp1()
             int VEHICLE_CAPACITY = 200;
             //string solutionFile = "C:/Users/user/ML/Optimisation/VRPTW/solomon_solutions/Cambridge/r101/Cambridge_scaled_5_r101_elev.txt";
 
-            Instance instance(cityFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES);
+            Instance instance(cityFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES,
+                              paths::edgeProfileFile(city, scale, benchmark));
             instance.setRoutes(solution);
             // evaluate against all cities
             for (int month = 1; month <= 12; month++) {

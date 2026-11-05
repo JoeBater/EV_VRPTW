@@ -8,7 +8,8 @@ Each benchmark instance is mapped onto a city's geography (latitude, longitude, 
 and routes are simulated against hourly weather data. Battery state-of-charge along each
 route depends on:
 
-- **Terrain**: road slope from elevation differences, with regenerative braking on descents
+- **Terrain**: gravity (m·g·Δh) over a ~100 m elevation profile of every road edge, with
+  regenerative braking recovering part of the energy on descents
 - **Load**: payload mass changes as deliveries are made
 - **Speed and acceleration**: the speed profile for each leg length, plus acceleration impulses
 - **Weather**: HVAC draw that depends on temperature; rain affects speed and service times

@@ -15,7 +15,8 @@ data/
 ├── processed/
 │   ├── instances/      <City>_<scale>_<benchmark>.csv         (sample cities committed)
 │   ├── short_paths/    <benchmark>_short_paths.txt           (all committed; city-independent)
-│   ├── edge_samples/   per-edge elevation profiles (JSON)     (ignored)
+│   ├── edge_profiles/  <City>_<scale>_<benchmark>.csv         (sample cities committed)
+│   ├── edge_samples/   per-edge elevation samples (JSON)      (ignored)
 │   └── plots/          MST/elevation plots                    (ignored)
 ├── weather/            Hourly weather per city                (sample cities committed)
 │   └── open-meteo/<year>/<City>-weather-<year>.csv   2022–2025

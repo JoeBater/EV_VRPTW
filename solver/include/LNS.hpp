@@ -44,10 +44,12 @@ private:
     double destroyStrength = 0.2;
     std::vector<int> removed_stores;
     
+    // distance is in metres, so a late stop must cost far more than a detour
     double w_distance = 1.0;
-    double w_lateness = 1000.0;
+    double w_lateness = 10000.0;    // per late stop
+    double w_tardiness = 100.0;     // per minute late, so the search can tell "nearly" from "very" late
     double w_capacity = 100.0;
-    
+
     struct IterationLog {
         int iteration;
         double best;
