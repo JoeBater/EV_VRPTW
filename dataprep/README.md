@@ -11,7 +11,8 @@ For each **city × scale × benchmark**:
    bucket (`copernicus-dem-30m`, no credentials needed) and merges them into
    `data/dem/<City>/<City>_dem.tif`. Tiles are cached, so this only happens once per city.
 2. **Scale**: maps Solomon's 100 × 100 grid onto a `scale` km square (scale 5 → 1 unit = 50 m).
-3. **Geolocate**: places the **depot on the city centre** (from `data/raw/cities.csv`) and
+3. **Geolocate**: places the **depot on the city's point in `data/raw/cities.csv`** (the
+   centre, or nearby for coastal and river cities; see [Known DEM issues](#known-dem-issues)) and
    converts every site to latitude and longitude.
 4. **MST**: builds a Prim minimum spanning tree over the sites. Vehicles travel along it.
 5. **Elevation**: looks up the elevation of every site, and of points every 100 m along each
@@ -110,6 +111,36 @@ dataprep/
 │   └── copernicus-elevation-model.ipynb   original notebook this package came from
 └── tests/
 ```
+
+## Known DEM issues
+
+Copernicus GLO-30 is a radar surface model, not bare earth. Not fixed yet:
+
+- **Artefact pits.** Radar DSMs can read several metres too low between tall buildings.
+  Cardiff r105 site 96 (51.4788, −3.1753) sits in a ~200 × 70 m pit at −7 m where the ground
+  is ~10 m, so trips through it pay a false ~17 m climb. A despike (replace pixels well below
+  their neighbourhood median) would fill these; a wider median would also cut roof and tree
+  noise, which is most of the slope signal in flat cities such as Cambridge.
+- **Buildings read as terrain.** Worst in central London: its r105 mean grade is 4.0%
+  (same as Bristol or Glasgow) where the ground is mostly 1–2%, and the highest sites
+  (Soho, St James's, Bloomsbury at 40–46 m) are on rooftops ~20 m above the street.
+- **Water is flattened to ~0–1 m**, so a site on a river, dock or the sea gets a false drop
+  and climb from its banks. To avoid this, **the city points in `cities.csv` are not all city
+  centres**: each coastal or river city is moved by the smallest shift (250 m steps) that puts
+  every site and every 100 m road sample of every scale-5 benchmark above 1.5 m. Liverpool
+  moved ~6.5 km to Alder Hey Children's Hospital (it had 39 of 101 r105 sites in the Mersey);
+  Derry, Plymouth, Southampton, London, Belfast, Glasgow, Inverness, Newcastle, Cardiff,
+  Aberystwyth and Lancaster moved 0.5–2.6 km (before: up to 18% of sites on water, in Derry).
+  The other cities had nothing on water. A new city or benchmark layout needs the same check.
+
+## Backlog
+
+- [ ] **Switch to a bare-earth DEM: [FABDEM](https://doi.org/10.5523/bris.s5hqmjcdj8yo2ibzi9b4ew3sn)**
+  (Copernicus GLO-30 with buildings and trees removed; same 30 m grid and 1° tiles; free
+  for research, CC BY-NC-SA 4.0). It would fix the rooftop and tree noise and probably the
+  artefact pits above, making a separate despike unnecessary. A major change: every city's
+  instances and edge profiles, including the committed Bath and Cambridge ones, would be
+  regenerated, and results compared before and after.
 
 ## Changes from the original notebook
 
