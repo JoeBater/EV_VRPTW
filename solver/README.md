@@ -23,11 +23,39 @@ solver/
 
 ### Experiments (`ev_vrptw`)
 
-- `exp0`: re-simulates existing solutions across cities and dates
-- `exp1`: runs LNS on chosen benchmarks, then re-evaluates the routes under different cities and weather
+- `exp0`: the **flatland baseline**, the closest thing to the academic VRPTW. Solves every
+  benchmark with LNS on flat terrain at a constant 20 °C with no rain. The site layout is the
+  same in every city, so it uses the Cambridge inputs, flattened. Legs are driven along the
+  minimum spanning tree (MST), the network all later experiments use.
+- `exp0a`: the same, on the **complete graph** (every leg driven directly, Euclidean, as in
+  Solomon), to measure how much moving to the MST alone changes the solutions. Each solution is
+  also re-simulated on the flat MST (the `mst_*` summary columns). Terrain is never put on the
+  complete graph.
+- `exp1`: re-simulates each exp0 baseline, without re-optimising, in every city, to separate
+  what terrain and weather each do to it:
+  - `1a` the city's terrain, flatland weather (one run per city)
+  - `1b` the city's weather on every day of the year, flat terrain
+  - `1c` terrain and weather, every day of the year
+
+  Each writes one row per city and day: lateness, depleted routes (charge below 0 at any
+  minute), lowest and mean final charge, and `feasible` (nothing late, nothing depleted). A
+  `flatland` row re-simulates the baseline itself as the reference.
 - `exp2`: placeholder
 
 `main.cpp` picks which experiment to run. For now an experiment runs from its class constructor.
+The benchmarks, their fleets and the cities are listed in `experiments/Benchmarks.hpp`. Each
+benchmark is solved with Solomon's capacity (200, or 1000 for r2/rc2), starting from its best-known
+vehicle count. The LNS keeps every route non-empty, so the fleet size is fixed per run; if the
+flatland solution has late stops or overload, exp0 adds a vehicle and solves again (up to 5
+extra), so every baseline is clean. Matching Solomon's optimum is not the aim.
+
+exp0 and exp0a warm-start from the published solutions in `results/solomon_solutions/<benchmark>.txt`
+(SINTEF format, `Route 1 : 5 3 7 ...`; SINTEF customer k is solver index k, depot 0). The
+first attempt uses the published routes and fleet; the LNS only accepts improvements, so a
+baseline is never worse than its start. Extra-vehicle attempts start from a random assignment.
+The summary's `start` column says which (`solomon` or `random`). Every published solution is
+feasible in this model on the flat complete graph, at exactly Solomon's distance × 50 m,
+because travel here is never slower than Solomon's one unit per minute.
 
 ## Building
 
@@ -51,8 +79,11 @@ cmake --build build
 ## Running
 
 ```bash
-./build/release/solver/ev_vrptw            # runs exp1
-./build/release/solver/ev_vrptw --exp 0    # re-simulates exp1's saved solutions
+./build/release/solver/ev_vrptw                  # exp0: solve all flatland baselines (~6 min each)
+./build/release/solver/ev_vrptw --bench r105     # just one (repeatable); --iterations N to change the LNS budget
+./build/release/solver/ev_vrptw --exp 0a         # the same on the complete graph
+./build/release/solver/ev_vrptw --exp 1          # exp1a, 1b and 1c (~2 min in all); or --exp 1a|1b|1c
+./build/release/solver/ev_vrptw --exp 1c --detailed   # also write per-minute route logs (~100 MB per city and benchmark)
 ./build/release/solver/ev_vrptw --year 2023   # weather year (default 2024; 2022–2025 available)
 ./build/release/solver/ev_vrptw --exp 0 --no-regen   # regen braking off; logs go to <City>_noregen/
 ./build/release/solver/ev_vrptw --exp 0 --start-hour 8   # minute 0 = 08:00 for the weather (default midnight); logs go to <City>_start08/
@@ -69,9 +100,12 @@ committed; generate the others with `dataprep/`.
 
 | Output | Path (under `results/`) |
 |---|---|
-| LNS progress per iteration | `searchProgress.csv` |
-| Solution (exp1) | `solutions/flatland_<scale>/<benchmark>/route_log_<month>.txt` |
-| Detailed simulation | `solutions/flatland_<scale>/<benchmark>/[<City>/]detailed_route_log_<month>[_<day>].csv` |
+| Baseline summary (exp0), one row per fleet tried; `clean = 1` marks the baseline | `solutions/flatland_<scale>/baseline_summary.csv` |
+| Complete-graph baselines (exp0a), same layout plus `mst_*` columns | `solutions/complete_<scale>/` |
+| Baseline solution (exp0) | `solutions/flatland_<scale>/<benchmark>/route_log.txt` |
+| Baseline flatland simulation and LNS progress (exp0) | `solutions/flatland_<scale>/<benchmark>/detailed_route_log.csv`, `searchProgress.csv` |
+| Re-simulation summary (exp1a/b/c), one row per city and day | `solutions/flatland_<scale>/<benchmark>/exp1<a\|b\|c>[_noregen][_startHH].csv` |
+| Re-simulation per-minute logs (`--detailed`) | `solutions/flatland_<scale>/<benchmark>/<City>[_noregen][_startHH]_<mode>/detailed_route_log[_<month>_<day>].csv` |
 | Route snapshots (optional) | the `videoDir` passed to `LNS`: `new/<it>.txt`, `best/<it>.txt` |
 
 ## Inputs
@@ -88,6 +122,13 @@ committed; generate the others with `dataprep/`.
 - [ ] Choose the experiment and its parameters from the command line or a config file, not constructors
 - [ ] Tidy: remove `using namespace std` from headers and `<bits/stdc++.h>` from `Route.hpp`
 - [ ] Add tests (e.g. a small instance with a known route cost)
+- [ ] **Strengthen the LNS before exp2.** It is pure descent (only improvements are accepted).
+  From a random start on the flat complete graph it finished 25–280% longer than the published
+  solutions (c107: 159 km vs 41 km), and on the MST it lost to the published routes on 12 of 16
+  benchmarks. exp2 re-optimises with no published start, so gains there would mix real
+  terrain/weather effects with better search. Candidates: simulated-annealing or
+  record-to-record acceptance, route-minimisation moves, regret insertion. The published
+  solutions are the yardstick.
 
 ## Energy model
 

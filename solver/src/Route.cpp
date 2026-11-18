@@ -135,7 +135,9 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
     const vector<int>& demands,
     const vector<double>& temperatures,
     const vector<double>& rainfall) {
-        
+
+    CAPACITY = capacity;  // loadFactor() scales by the instance's capacity (1000 for the 2-series)
+
     // guard against r being empty - and then bail
     if (r.empty()) {
         cerr << "route is empty" << endl;
@@ -299,6 +301,8 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
                 }
             }
 
+            // a full battery cannot take regen (e.g. a trip that starts downhill)
+            minute_regen = std::min(minute_regen, std::max(0.0, 1.0 - (cumulative_soc - minute_used)));
             double net = minute_used - minute_regen;
             cumulative_soc -= net;
             leg_result.soc_used += net;

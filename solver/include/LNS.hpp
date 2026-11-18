@@ -48,7 +48,7 @@ private:
     double w_distance = 1.0;
     double w_lateness = 10000.0;    // per late stop
     double w_tardiness = 100.0;     // per minute late, so the search can tell "nearly" from "very" late
-    double w_capacity = 100.0;
+    double w_capacity = 10000.0;    // per unit over capacity; at 100 a unit cost less than a 100 m detour, so the search kept overloads
 
     struct IterationLog {
         int iteration;

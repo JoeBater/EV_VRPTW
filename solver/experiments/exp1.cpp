@@ -1,170 +1,132 @@
 #include "exp1.hpp"
 
+#include <algorithm>
+#include <fstream>
+
+#include "Benchmarks.hpp"
 #include "ProjectPaths.hpp"
 
 static const int DAYS_IN_MONTH[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+static const double FLAT_TEMPERATURE_C = 20.0;  // as in exp0
 
-exp1::exp1()
+// Re-simulates the flatland baseline solutions (from exp0) in every city, without
+// re-optimising, to measure what the real world does to them:
+//   1a  the city's terrain, flatland weather (20 C, no rain)   - one run per city
+//   1b  the city's weather for every day of the year, flat terrain
+//   1c  the city's terrain and weather for every day of the year
+//
+// Writes results/solutions/flatland_<scale>/<benchmark>/exp1<mode><variant>.csv, one row per
+// city and day (month = day = 0 for 1a), plus a "flatland" row re-simulating the baseline
+// itself as the reference. A route is depleted when its charge drops below 0 at any minute;
+// a run is feasible when no stop or depot return is late and no route is depleted.
+// With detailed = true it also writes each run's per-minute log to <City><variant>_<mode>/.
+exp1::exp1(const std::string& mode, const std::vector<std::string>& only, bool detailed)
 {
-    string METHOD = "LNS";
+    const int scale = 5;
+    const bool terrain = mode == "1a" || mode == "1c";
+    const bool weather = mode == "1b" || mode == "1c";
 
+    // Variant runs go to exp1c_noregen.csv, exp1c_start08.csv etc. beside the default run
+    string variant = Route::regenBraking() ? "" : "_noregen";
+    if (Route::dayStartHour() != 0) {
+        char start[16];
+        std::snprintf(start, sizeof(start), "_start%02d", Route::dayStartHour());
+        variant += start;
+    }
 
+    for (const Benchmark& b : benchmarks()) {
+        if (!only.empty() && std::find(only.begin(), only.end(), b.name) == only.end()) continue;
 
-    std::vector<std::string> benchmarks = {
-
-        "r105",
-//        "r101", "r104", "r204", "r205", "r208",
-//        "c107", "c108", "c109",
-//        "rc101", "rc104", "rc107", "rc201", "rc204", "rc207",
-    };
-
-    int scale = 5;
-
-    for (size_t b = 0; b < benchmarks.size(); b++) {
-        string benchmark = benchmarks[b];
-
-        // Solutions are found on flattened terrain and weather, so the
-        // optimisation city only supplies the site layout
-        string solutionDir = paths::resultsDir("solutions/flatland_" + std::to_string(scale) + "/" + benchmark);
-
-        vector<Route> solution;
-
-        //string benchmark = "r101";
-        for (int month = 1; month <= 1; month++) {
-
-            string city = "Cambridge";
-
-            if (!paths::inputsExist(city, scale, benchmark)) {
-                cerr << "skipping " << benchmark << " (generate inputs with dataprep)" << endl;
-                continue;
-            }
-
-            string instanceFile = paths::instanceFile(city, scale, benchmark);
-            string treeFile = paths::shortPathsFile(benchmark);
-            string weatherFile = paths::weatherFile(city);
-            string searchProgressFile = paths::resultsDir("") + "searchProgress.csv";
-
-            int NUM_VEHICLES = 17;
-            int VEHICLE_CAPACITY = 200;
-            //string solutionFile = "C:/Users/user/ML/Optimisation/VRPTW/solomon_solutions/Cambridge/r101/Cambridge_scaled_5_r101_elev.txt";
-
-            Instance instance(instanceFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES,
-                              paths::edgeProfileFile(city, scale, benchmark));
-            cerr << "declared instance" << endl;
-            SolutionScore finalCost;
-
-
-            instance.setVerbosity(1);
-            instance.setDebug(0);
-            instance.displayInstanceData();
-            instance.displayRoutes();
-
-            //int month = 1;
-            //int day = 1;
-            //instance.getTodaysWeather(month,day);
-            //instance.getMonthAverageWeather(month);
-            instance.flattenWeather(20.0);
-            instance.flattenCity();
-
-            cerr << "set weather " << month << endl;
-            instance.calculateRoutes();
-            cerr << "done first route simulation" << endl;
-            //instance.displayWeatherData();
-
-            //instance.logDetailedRoutes("C:/Users/user/ML/Optimisation/VRPTW/detailed_route_log_"+std::to_string(month)+"_"+std::to_string(day)+".csv");
-
-            //instance.readRoutesFromFile("C:/Users/user/ML/Optimisation/VRPTW/solomon/solomon_solutions/sintef_rc101.txt");
-
-
-    //        if (METHOD == "AILS") {
-    //            cout << "running AILS" << endl;
-    //            int maxIterations = 50;
-    //            int twoOptMaxNoImprovements = 10;
-    //            int initialPerturbStrength = 5;
-    //            AILS optimizer(&instance, twoOptMaxNoImprovements, maxIterations, initialPerturbStrength, searchProgressFile);
-    //            finalCost = optimizer.runAdaptiveIteratedLocalSearch(LocalSearchMethod::FirstImproving, 5);
-    //        }
-
-            if (METHOD == "LNS") {
-                cout << "running LNS" << endl;
-                int maxIterations = 0.25e6;
-                LNS optimizer(&instance, searchProgressFile);
-                finalCost = optimizer.runLargeNeighbourSearch(maxIterations);
-            }
-
-            //SolutionScore
-            cout << finalCost.total_cost << endl;
-
-            instance.displayRoutes();
-            instance.writeRoutesToFile(solutionDir + "route_log_"+std::to_string(month)+".txt");
-            instance.logDetailedRoutes(solutionDir + "detailed_route_log_"+std::to_string(month)+".csv");
-            solution = instance.getRoutes();
-
-            if (month == 1) {  // Jan - 31 days
-                for (int day = 1; day <= 1; day++) {
-                    //instance.getTodaysWeather(month, day);
-                    instance.flattenWeather(20.0);
-                    instance.calculateRoutes();
-                    instance.logDetailedRoutes(solutionDir + "detailed_route_log_"+std::to_string(month)+"_"+std::to_string(day)+".csv");
-                }
-            }
+        string solutionDir = paths::resultsDir("solutions/flatland_" + std::to_string(scale) + "/" + b.name);
+        string solutionFile = solutionDir + "route_log.txt";
+        if (!std::filesystem::exists(solutionFile)) {
+            cerr << "skipping " << b.name << ": no baseline at " << solutionFile << " (run exp0 first)" << endl;
+            continue;
         }
 
-        if (solution.empty()) continue;
+        std::ofstream out(solutionDir + "exp" + mode + variant + ".csv");
+        out << "benchmark,mode,city,month,day,routes,distance_m,late_stops,tardiness_min,"
+               "depleted_routes,min_soc,mean_final_soc,max_soc_used,feasible\n";
 
-        // HORRIBLE FUNCTIONALITY TO LOG DATA RESULTS
-        vector<string> cities;
-        cities.push_back("Belfast");
-        cities.push_back("Birmingham");
-        cities.push_back("Bristol");
-        cities.push_back("Cardiff");
-        cities.push_back("Glasgow");
-        cities.push_back("Leeds");
-        cities.push_back("Liverpool");
-        cities.push_back("London");
-        cities.push_back("Plymouth");
-        cities.push_back("Southampton");
+        auto record = [&](Instance& instance, const string& city, int month, int day) {
+            int routes = 0, depleted = 0;
+            double minSoc = 1.0, sumFinal = 0.0, maxUsed = 0.0;
+            for (const Route& r : instance.getRoutes()) {
+                vector<SoCEntry> detail = r.getSoCDetail();
+                if (detail.empty()) continue;
+                double routeMin = 1.0;
+                for (const SoCEntry& e : detail) routeMin = std::min(routeMin, e.cumulative_soc);
+                double final = detail.back().cumulative_soc;
+                routes++;
+                if (routeMin < 0.0) depleted++;
+                minSoc = std::min(minSoc, routeMin);
+                sumFinal += final;
+                maxUsed = std::max(maxUsed, 1.0 - final);
+            }
+            int late = instance.getTotalLate();
+            out << b.name << "," << mode << "," << city << "," << month << "," << day << ","
+                << routes << "," << instance.getTotalDistance() << "," << late << ","
+                << instance.getTotalTardiness() << "," << depleted << "," << minSoc << ","
+                << (routes ? sumFinal / routes : 0.0) << "," << maxUsed << ","
+                << (late == 0 && depleted == 0 ? 1 : 0) << "\n";
+        };
 
-//        cities.push_back("Aberystwyth");
-        cities.push_back("Bath");
-        cities.push_back("Cambridge");
-//        cities.push_back("Carlisle");
-//        cities.push_back("Chichester");
-//        cities.push_back("Derry");
-        cities.push_back("Inverness");
-//        cities.push_back("Lancaster");
-//        cities.push_back("Newcastle");
-//        cities.push_back("Wrexham");
+        auto load = [&](const string& city) {
+            Instance* instance = new Instance(paths::instanceFile(city, scale, b.name),
+                                              paths::shortPathsFile(b.name),
+                                              paths::weatherFile(city),
+                                              b.capacity, b.vehicles,
+                                              paths::edgeProfileFile(city, scale, b.name));
+            instance->setVerbosity(0);
+            instance->setDebug(0);
+            instance->readRoutesFromFile(solutionFile);
+            return instance;
+        };
 
-        for (size_t c = 0; c < cities.size(); c++) {
+        // reference: the baseline itself, as exp0 simulated it
+        {
+            Instance* flat = load("Cambridge");
+            flat->getTodaysWeather(1, 1);
+            flat->flattenWeather(FLAT_TEMPERATURE_C);
+            flat->flattenCity();
+            flat->calculateRoutes();
+            record(*flat, "flatland", 0, 0);
+            delete flat;
+        }
 
-            string city = cities[c];
-
-            if (!paths::inputsExist(city, scale, benchmark)) {
+        for (const string& city : cities()) {
+            if (!paths::inputsExist(city, scale, b.name)) {
                 cerr << "skipping " << city << " (generate inputs with dataprep)" << endl;
                 continue;
             }
+            cout << "== exp" << mode << ": " << b.name << " in " << city << variant << endl;
 
-            string cityFile = paths::instanceFile(city, scale, benchmark);
-            string treeFile = paths::shortPathsFile(benchmark);
-            string weatherFile = paths::weatherFile(city);
-            string cityDir = paths::resultsDir("solutions/flatland_" + std::to_string(scale) + "/" + benchmark + "/" + city);
+            Instance* instance = load(city);
+            if (!terrain) instance->flattenCity();
+            string cityDir = detailed
+                ? paths::resultsDir("solutions/flatland_" + std::to_string(scale) + "/" + b.name + "/" + city + variant + "_" + mode)
+                : "";
 
-            int NUM_VEHICLES = 20;
-            int VEHICLE_CAPACITY = 200;
-            //string solutionFile = "C:/Users/user/ML/Optimisation/VRPTW/solomon_solutions/Cambridge/r101/Cambridge_scaled_5_r101_elev.txt";
-
-            Instance instance(cityFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES,
-                              paths::edgeProfileFile(city, scale, benchmark));
-            instance.setRoutes(solution);
-            // evaluate against all cities
-            for (int month = 1; month <= 12; month++) {
-                for (int day = 1; day <= DAYS_IN_MONTH[month - 1]; day++) {
-                    instance.getTodaysWeather(month, day);
-                    instance.calculateRoutes();
-                    instance.logDetailedRoutes(cityDir + "detailed_route_log_"+std::to_string(month)+"_"+std::to_string(day)+".csv");
+            if (!weather) {
+                instance->getTodaysWeather(1, 1);
+                instance->flattenWeather(FLAT_TEMPERATURE_C);
+                instance->calculateRoutes();
+                record(*instance, city, 0, 0);
+                if (detailed) instance->logDetailedRoutes(cityDir + "detailed_route_log.csv");
+            } else {
+                for (int month = 1; month <= 12; month++) {
+                    for (int day = 1; day <= DAYS_IN_MONTH[month - 1]; day++) {
+                        instance->getTodaysWeather(month, day);
+                        instance->calculateRoutes();
+                        record(*instance, city, month, day);
+                        if (detailed) {
+                            instance->logDetailedRoutes(cityDir + "detailed_route_log_" + std::to_string(month) + "_" + std::to_string(day) + ".csv");
+                        }
+                    }
                 }
             }
+            out.flush();
+            delete instance;
         }
     }
 }
