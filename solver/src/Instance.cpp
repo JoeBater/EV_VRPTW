@@ -538,6 +538,10 @@ void Instance::flattenCity() {
     spanning_tree.flattenProfiles();
 }
 
+void Instance::useCompleteGraph() {
+    spanning_tree.clear();  // getSteps() then returns {} = direct traversal
+}
+
 void Instance::displayDistanceMatrix() {
     if (VERBOSE) {
         std::cout << "Distance Matrix " << distanceMatrix.size() << " rows" << endl;
@@ -867,6 +871,7 @@ void Instance::readRoutesFromFile(std::string filename) {
 
         // Construct the Route object and add to instance
         Route route(new_route);  // assuming Route has a constructor that takes vector<int>
+        route.setRouteNumber(route_id);
         routes.push_back(route);
     }
 

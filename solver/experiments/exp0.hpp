@@ -1,7 +1,5 @@
 #pragma once
 
-
-
 #include <vector>
 #include <string>
 
@@ -15,8 +13,9 @@ using namespace::std;
 class exp0
 {
 public:
-    exp0();
+    // only: benchmark names to solve (empty = all); iterations: LNS iterations per benchmark
+    // completeGraph: exp0a - solve on the complete (Euclidean) graph instead of the MST
+    exp0(const std::vector<std::string>& only = {}, int iterations = 250000, bool completeGraph = false);
     ~exp0();
 
 };
-

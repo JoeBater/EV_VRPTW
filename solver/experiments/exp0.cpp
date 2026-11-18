@@ -1,94 +1,172 @@
 #include "exp0.hpp"
 
+#include <algorithm>
+#include <chrono>
+#include <ctime>
+#include <fstream>
+#include <sstream>
+
+#include "Benchmarks.hpp"
 #include "ProjectPaths.hpp"
 
-static const int DAYS_IN_MONTH[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+// Baseline: solves every benchmark on flatland (no terrain, constant 20 C and no rain), the
+// closest thing to the academic VRPTW. The site layout is the same in every city, so the
+// committed Cambridge inputs are used and then flattened. exp1 re-simulates these solutions
+// in each real city and day.
+//
+// exp0 drives every leg along the minimum spanning tree (MST), the network all later work
+// uses. exp0a (completeGraph) drives every leg directly, on the complete Euclidean graph as in
+// Solomon, to measure how much the MST alone changes the solutions; it also re-simulates each
+// complete-graph solution on the flat MST (the mst_* columns). Terrain is never put on the
+// complete graph.
+//
+// Writes, per benchmark, to results/solutions/<flatland|complete>_<scale>/<benchmark>/:
+//   route_log.txt           the solution (exp1 reads the flatland one)
+//   detailed_route_log.csv  its flatland simulation
+//   searchProgress.csv      LNS progress
+// and appends one row per attempt (fleet size) to .../baseline_summary.csv;
+// the row with clean = 1 is the baseline.
+//
+// Warm start: if results/solomon_solutions/<benchmark>.txt holds a published solution (SINTEF
+// format, "Route 1 : 5 3 7 ..."), the first attempt starts the LNS from it, with its fleet;
+// the LNS only accepts improvements, so the baseline is never worse than it. Attempts with
+// extra vehicles start from a random assignment. The converted start is kept as
+// solomon_start.txt.
 
-// Re-simulates saved solutions (from exp1) in every city, for every day of the year.
-exp0::exp0()
+// Converts a SINTEF solution file to the solver's route_log format; returns the route count
+// (0 if there is no file).
+static int convertPublishedSolution(const string& sintefFile, const string& routeFile)
 {
-    std::vector<std::string> benchmarks = {
-        "c107", "c108", "c109",
-        "r101", "r104", "r105", "r204", "r205", "r208",
-        "rc101", "rc104", "rc107", "rc201", "rc204", "rc207",
-    };
+    std::ifstream in(sintefFile);
+    if (!in.is_open()) return 0;
+    std::ofstream out(routeFile);
+    string line;
+    int routes = 0;
+    while (std::getline(in, line)) {
+        if (line.rfind("Route", 0) != 0) continue;
+        size_t colon = line.find(':');
+        if (colon == string::npos) continue;
+        std::stringstream ss(line.substr(colon + 1));
+        out << routes << " :";
+        int customer;
+        while (ss >> customer) out << " " << customer;  // SINTEF customer k = solver index k (depot 0)
+        out << "\n";
+        routes++;
+    }
+    return routes;
+}
+exp0::exp0(const std::vector<std::string>& only, int iterations, bool completeGraph)
+{
+    const string layoutCity = "Cambridge";
+    const int scale = 5;
+    const double FLAT_TEMPERATURE_C = 20.0;  // the energy model's ideal: no temperature penalty, minimum HVAC
+    const int MAX_EXTRA_VEHICLES = 5;
 
-    int scale = 5;
-
-    // Variant runs go to <City>_noregen/, <City>_start08/ etc. beside the default run
-    string variant = Route::regenBraking() ? "" : "_noregen";
-    if (Route::dayStartHour() != 0) {
-        char start[16];
-        std::snprintf(start, sizeof(start), "_start%02d", Route::dayStartHour());
-        variant += start;
+    string solutionsDir = string("solutions/") + (completeGraph ? "complete_" : "flatland_") + std::to_string(scale);
+    string summaryFile = paths::resultsDir(solutionsDir) + "baseline_summary.csv";
+    bool writeHeader = !std::filesystem::exists(summaryFile);
+    std::ofstream summary(summaryFile, std::ios::app);
+    if (writeHeader) {
+        summary << "run_at,benchmark,vehicles,capacity,iterations,distance_m,late_stops,"
+                   "tardiness_min,overload,last_return_min,seconds,clean,start";
+        if (completeGraph) summary << ",mst_distance_m,mst_late_stops,mst_tardiness_min,mst_last_return_min,mst_min_soc";
+        summary << "\n";
     }
 
-    for (size_t b = 0; b < benchmarks.size(); b++) {
-        string benchmark = benchmarks[b];
+    auto load = [&](const Benchmark& b, int vehicles) {
+        Instance* instance = new Instance(paths::instanceFile(layoutCity, scale, b.name),
+                                          paths::shortPathsFile(b.name),
+                                          paths::weatherFile(layoutCity),
+                                          b.capacity, vehicles,
+                                          paths::edgeProfileFile(layoutCity, scale, b.name));
+        instance->setVerbosity(0);
+        instance->setDebug(0);
+        instance->flattenWeather(FLAT_TEMPERATURE_C);
+        instance->flattenCity();
+        return instance;
+    };
 
-        //vector<Route> solution;
+    auto lastReturnOf = [](Instance& instance) {
+        int lastReturn = 0;
+        for (const Route& r : instance.getRoutes()) lastReturn = std::max(lastReturn, r.getEndTime());
+        return lastReturn;
+    };
 
-        string solutionDir = paths::resultsDir("solutions/flatland_" + std::to_string(scale) + "/" + benchmark);
-        string solutionFile = solutionDir + "route_log_1.txt";
-        if (!std::filesystem::exists(solutionFile)) {
-            cerr << "skipping " << benchmark << ": no solution at " << solutionFile << " (run exp1 first)" << endl;
+    for (const Benchmark& b : benchmarks()) {
+        if (!only.empty() && std::find(only.begin(), only.end(), b.name) == only.end()) continue;
+
+        if (!paths::inputsExist(layoutCity, scale, b.name)) {
+            cerr << "skipping " << b.name << " (generate inputs with dataprep)" << endl;
             continue;
         }
 
-        // HORRIBLE FUNCTIONALITY TO LOG DATA RESULTS
-        vector<string> cities;
-        cities.push_back("Belfast");
-        cities.push_back("Birmingham");
-        cities.push_back("Bristol");
-        cities.push_back("Cardiff");
-        cities.push_back("Glasgow");
-        cities.push_back("Leeds");
-        cities.push_back("Liverpool");
-        cities.push_back("London");
-        cities.push_back("Plymouth");
-        cities.push_back("Southampton");
+        string solutionDir = paths::resultsDir(solutionsDir + "/" + b.name);
+        string startFile = solutionDir + "solomon_start.txt";
+        string sintefFile = (paths::resultsRoot() / "solomon_solutions" / (b.name + ".txt")).string();
+        int publishedRoutes = convertPublishedSolution(sintefFile, startFile);
+        int firstFleet = publishedRoutes > 0 ? publishedRoutes : b.vehicles;
 
-//        cities.push_back("Aberystwyth");
-        cities.push_back("Bath");
-        cities.push_back("Cambridge");
-//        cities.push_back("Carlisle");
-//        cities.push_back("Chichester");
-//        cities.push_back("Derry");
-        cities.push_back("Inverness");
-//        cities.push_back("Lancaster");
-//        cities.push_back("Newcastle");
-//        cities.push_back("Wrexham");
+        // Start from the published (or Solomon best-known) fleet and add vehicles until the
+        // flatland solution is clean (no late stops, no overload). Matching Solomon's optimum
+        // is not the aim; a clean baseline is, since exp1 measures what terrain and weather do to it.
+        for (int vehicles = firstFleet; vehicles <= firstFleet + MAX_EXTRA_VEHICLES; vehicles++) {
+            bool warm = publishedRoutes > 0 && vehicles == publishedRoutes;
+            cout << "== " << b.name << (completeGraph ? " (complete graph)" : "") << ": " << vehicles
+                 << " vehicles x " << b.capacity << ", " << iterations << " iterations, "
+                 << (warm ? "published start" : "random start") << endl;
 
-        for (size_t c = 0; c < cities.size(); c++) {
+            Instance* instance = load(b, vehicles);
+            if (completeGraph) instance->useCompleteGraph();
+            if (warm) instance->readRoutesFromFile(startFile);
+            instance->calculateRoutes();
 
-            string city = cities[c];
+            auto start = std::chrono::steady_clock::now();
+            LNS optimizer(instance, solutionDir + "searchProgress.csv");
+            SolutionScore score = optimizer.runLargeNeighbourSearch(iterations);
+            double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 
-            if (!paths::inputsExist(city, scale, benchmark)) {
-                cerr << "skipping " << city << " (generate inputs with dataprep)" << endl;
-                continue;
+            instance->calculateRoutes();
+            bool clean = instance->getTotalLate() == 0 && instance->getTotalOverload() == 0;
+            bool last = vehicles == firstFleet + MAX_EXTRA_VEHICLES;
+
+            std::time_t now = std::time(nullptr);
+            char runAt[32];
+            std::strftime(runAt, sizeof(runAt), "%Y-%m-%dT%H:%M:%S", std::localtime(&now));
+
+            summary << runAt << "," << b.name << "," << vehicles << "," << b.capacity << ","
+                    << iterations << "," << instance->getTotalDistance() << "," << instance->getTotalLate() << ","
+                    << instance->getTotalTardiness() << "," << instance->getTotalOverload() << ","
+                    << lastReturnOf(*instance) << "," << (int)seconds << "," << (clean ? 1 : 0) << "," << (warm ? "solomon" : "random");
+
+            instance->writeRoutesToFile(solutionDir + "route_log.txt");
+
+            if (completeGraph) {
+                // the same routes, driven along the flat MST instead
+                Instance* mst = load(b, vehicles);
+                mst->readRoutesFromFile(solutionDir + "route_log.txt");
+                mst->calculateRoutes();
+                double minSoc = 1.0;
+                for (const Route& r : mst->getRoutes())
+                    for (const SoCEntry& e : r.getSoCDetail()) minSoc = std::min(minSoc, e.cumulative_soc);
+                summary << "," << mst->getTotalDistance() << "," << mst->getTotalLate() << ","
+                        << mst->getTotalTardiness() << "," << lastReturnOf(*mst) << "," << minSoc;
+                delete mst;
             }
+            summary << "\n";
+            summary.flush();
 
-            string cityFile = paths::instanceFile(city, scale, benchmark);
-            string treeFile = paths::shortPathsFile(benchmark);
-            string weatherFile = paths::weatherFile(city);
-            string cityDir = paths::resultsDir("solutions/flatland_" + std::to_string(scale) + "/" + benchmark + "/" + city + variant);
+            cout << b.name << " (" << vehicles << " vehicles): cost " << score.total_cost << ", distance "
+                 << instance->getTotalDistance() << " m, late stops " << instance->getTotalLate()
+                 << ", overload " << instance->getTotalOverload() << " (" << (int)seconds << " s)"
+                 << (clean ? "" : " - not clean") << endl;
 
-            int NUM_VEHICLES = 20;
-            int VEHICLE_CAPACITY = 200;
-
-            Instance instance(cityFile, treeFile, weatherFile, VEHICLE_CAPACITY, NUM_VEHICLES,
-                              paths::edgeProfileFile(city, scale, benchmark));
-
-            instance.readRoutesFromFile(solutionFile);
-            //instance.setRoutes(solution);
-            // evaluate against all cities
-            for (int month = 1; month <= 12; month++) {
-                for (int day = 1; day <= DAYS_IN_MONTH[month - 1]; day++) {
-                    instance.getTodaysWeather(month, day);
-                    instance.calculateRoutes();
-                    instance.logDetailedRoutes(cityDir + "detailed_route_log_"+std::to_string(month)+"_"+std::to_string(day)+".csv");
-                }
+            if (clean || last) {
+                if (!clean) cerr << b.name << ": still not clean with " << vehicles << " vehicles" << endl;
+                instance->logDetailedRoutes(solutionDir + "detailed_route_log.csv");
+                delete instance;
+                break;
             }
+            delete instance;
         }
     }
 }

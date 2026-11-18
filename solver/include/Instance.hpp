@@ -45,6 +45,10 @@ public:
     vector<vector<double>> getSlopeMatrix();
     const vector<vector<double>>& getSlopeMatrix() const;
     void flattenCity();
+    // Drop the spanning tree: every leg i -> j is driven directly (Euclidean, as in Solomon),
+    // using the slope matrix (flat after flattenCity). Flatland only; there are no terrain
+    // profiles for complete-graph edges.
+    void useCompleteGraph();
     double getElevation(int s1);
     double getSlope(int s1, int s2);
     

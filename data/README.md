@@ -11,7 +11,7 @@ data is git-ignored and can be regenerated with `dataprep/`.
 data/
 ├── raw/
 │   ├── solomon/        Original Solomon benchmark CSVs (16 instances)
-│   └── cities.csv      City table: centre lat/lon, size, hilliness, population
+│   └── cities.csv      City table: depot lat/lon (centre, or moved off water), size, hilliness, population
 ├── processed/
 │   ├── instances/      <City>_<scale>_<benchmark>.csv         (sample cities committed)
 │   ├── short_paths/    <benchmark>_short_paths.txt           (all committed; city-independent)
@@ -36,6 +36,18 @@ data/
 Aberystwyth, Bath, Belfast, Birmingham, Bristol, Cambridge, Cardiff, Carlisle, Chichester,
 Derry, Glasgow, Inverness, Lancaster, Leeds, Liverpool, London, Newcastle, Plymouth,
 Southampton, Wrexham.
+
+The `hilliness` column describes the terrain inside each city's 5 km grid, not the wider
+area. It is banded by the mean road grade over all 16 benchmarks' edge profiles: **hilly**
+above 4%, **moderate** 2.5–4%, **flat** below 2.5%. London is labelled flat although it
+measures 3.6%, because most of that is rooftops in the surface model (see
+`dataprep/README.md`, Known DEM issues).
+
+| Hilliness | Cities |
+|---|---|
+| hilly | Aberystwyth, Bath, Bristol, Derry, Glasgow, Lancaster, Plymouth |
+| moderate | Belfast, Birmingham, Inverness, Leeds, Newcastle, Southampton, Wrexham |
+| flat | Cambridge, Cardiff, Carlisle, Chichester, Liverpool, London |
 
 ## What gets committed
 
