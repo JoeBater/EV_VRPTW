@@ -46,6 +46,9 @@ public:
 private:
     string name;
     std::unordered_map<std::pair<int, int>, std::vector<int>, pair_hash> steps;
+    // tree format (*_mst.txt): the tree rooted at the depot, paths found on demand
+    std::vector<int> parent, depth;
+    void buildTree(const std::vector<std::pair<int, int>>& edges);
     std::unordered_map<std::pair<int, int>, std::vector<EdgeSegment>, pair_hash> profiles;
 };
 

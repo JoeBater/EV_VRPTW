@@ -91,7 +91,11 @@ data/processed/plots/**
 !data/**/
 # Short paths are city-independent: one file per benchmark
 !data/processed/short_paths/*.txt
+# MST edge lists: city-independent too, ~10 kB each
+!data/processed/mst/*.txt
 !data/raw/solomon/*.csv
+# Solomon layouts with stores added (dataprep extend.py): small, and the source of every city file
+!data/raw/extended/*.csv
 !data/raw/cities.csv
 !data/**/.gitkeep
 !data/**/README.md

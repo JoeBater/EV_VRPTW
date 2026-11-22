@@ -28,7 +28,7 @@ Plus, once per **benchmark**:
 
 | Output | Path | Read by | Committed |
 |---|---|---|---|
-| Instance | `data/processed/instances/<City>_<scale>_<benchmark>.csv` | solver | sample cities |
+| Instance | `data/processed/instances/<City>/<City>_<scale>_<benchmark>.csv` | solver | sample cities |
 | Short paths | `data/processed/short_paths/<benchmark>_short_paths.txt` | solver (`MST`) | yes |
 | Edge profiles | `data/processed/edge_profiles/<City>_<scale>_<benchmark>.csv` | solver (`MST`) | sample cities |
 | Edge samples | `data/processed/edge_samples/<City>_<scale>_<benchmark>_edge_samples.json` | analysis | no |
@@ -68,6 +68,39 @@ Options: `--cities`, `--benchmarks`, `--scales` (km, default 5), `--plots none|f
 
 Two sample cities with all 16 benchmarks take about 10 seconds once the DEMs are cached.
 
+## Extended instances
+
+`extend.py` grows a Solomon layout with extra stores while keeping its road network:
+
+```bash
+PYTHONPATH=src python -m ev_vrptw_dataprep.extend --base r101     --benchmarks r101 r104 r105 r204 r205 r208 --add 100 --seed 1
+PYTHONPATH=src python -m ev_vrptw_dataprep --benchmarks r101_200 r104_200 r105_200 r204_200 r205_200 r208_200
+```
+
+How each new store is placed:
+- It is drawn at a random whole-number grid point inside the base layout's bounding box.
+- It is kept only if it **and its new road** are on land (above 1.5 m) in **every** city. Roads may not
+  cross water: no bridges or fords.
+- It joins the nearest existing node (original or new) by one road.
+
+The result is the base MST plus one spur per store. It is a tree, but not the MST of all the sites, so it
+is saved as an edge list in `data/processed/mst/<name>_mst.txt`. The pipeline uses that list instead of
+running Prim again, and the solver walks paths on it.
+
+All benchmarks sharing a layout get the same new stores. Each gets its own demands and windows, copied
+from a random donor customer of that benchmark:
+- the donor's demand;
+- a whole-horizon window if the donor has one, else the donor's window width, placed where the store is
+  reachable and the vehicle can still return before the depot closes;
+- service time 10.
+
+New stores are numbered after the originals (sites 101+), so the first 101 rows and the original edge
+profiles are unchanged. Stores may share a site (co-located customers).
+
+Outputs: the raw instances in `data/raw/extended/<benchmark>_<customers>.csv` (for example `r101_200`) and
+the trees in `data/processed/mst/`. The pipeline then writes the city files
+`instances/<City>/<City>_5_r101_200.csv` and `edge_profiles/<City>_5_r101_200.csv`.
+
 ## Weather
 
 ```bash
@@ -106,9 +139,12 @@ dataprep/
 │   ├── writers.py      CSV / short-path / JSON writers
 │   ├── plots.py        MST and elevation plot
 │   ├── pipeline.py     generate_instance, generate_short_paths, CLI
+│   ├── extend.py       add stores to a layout, growing its network
 │   └── weather.py      Open-Meteo download, CLI
 ├── notebooks/
-│   └── copernicus-elevation-model.ipynb   original notebook this package came from
+│   ├── copernicus-elevation-model.ipynb   original notebook this package came from
+│   ├── time-window-feasibility.ipynb      can every customer be served inside its window?
+│   └── mst-elevation-profile.ipynb        the MST coloured by elevation; sagittal view between two sites
 └── tests/
 ```
 

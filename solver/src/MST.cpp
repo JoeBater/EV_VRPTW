@@ -11,10 +11,18 @@ MST::MST(string filename)
     readSpanningTree(filename);
 }
 
-void MST::readSpanningTree(string filename) 
-{    
+// Two formats, told apart line by line:
+//   "from to: s1 s2 ..."  one precomputed path per pair (Solomon *_short_paths.txt)
+//   "u v"                 one MST edge per line (*_mst.txt); paths are walked on the tree
+//                         in getSteps, since listing every pair of a 1000-site tree
+//                         would take ~400 MB
+void MST::readSpanningTree(string filename)
+{
     steps.clear();
-    
+    parent.clear();
+    depth.clear();
+    std::vector<std::pair<int, int>> edges;
+
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "Error: Unable to open file <" << filename << ">!" << std::endl;
@@ -31,7 +39,10 @@ void MST::readSpanningTree(string filename)
         // Split line at colon
         size_t colon_pos = line.find(":");
         if (colon_pos == std::string::npos) {
-            std::cerr << "Malformed line: " << line << std::endl;
+            std::istringstream edge(line);
+            int u, v;
+            if (edge >> u >> v) edges.push_back({u, v});
+            else std::cerr << "Malformed line: " << line << std::endl;
             continue;
         }
 
@@ -53,6 +64,35 @@ void MST::readSpanningTree(string filename)
     }
 
     file.close();
+    if (!edges.empty()) buildTree(edges);
+}
+
+// Root the tree at the depot (site 0): parent and depth of every site, by breadth-first search
+void MST::buildTree(const std::vector<std::pair<int, int>>& edges)
+{
+    int n = 0;
+    for (const auto& [u, v] : edges) n = std::max(n, std::max(u, v) + 1);
+    std::vector<std::vector<int>> adjacent(n);
+    for (const auto& [u, v] : edges) {
+        adjacent[u].push_back(v);
+        adjacent[v].push_back(u);
+    }
+    parent.assign(n, -1);
+    depth.assign(n, -1);
+    depth[0] = 0;
+    std::vector<int> queue{0};
+    for (size_t i = 0; i < queue.size(); i++) {
+        int u = queue[i];
+        for (int v : adjacent[u]) {
+            if (depth[v] < 0) {
+                depth[v] = depth[u] + 1;
+                parent[v] = u;
+                queue.push_back(v);
+            }
+        }
+    }
+    if ((int)queue.size() != n || (int)edges.size() != n - 1)
+        std::cerr << "Warning: MST edges do not form one tree over " << n << " sites" << std::endl;
 }
 
 MST::~MST()
@@ -61,6 +101,8 @@ MST::~MST()
 
 void MST::clear() {
     steps.clear();
+    parent.clear();
+    depth.clear();
     profiles.clear();
 }
 
@@ -77,8 +119,26 @@ std::vector<int> MST::getSteps(int ss, int ff) const {
     auto it = steps.find({ss, ff});
     if (it != steps.end()) {
         return it->second;
-    } 
-    
+    }
+
+    // tree format: climb from both ends to their lowest common ancestor
+    int n = (int)parent.size();
+    if (ss != ff && ss >= 0 && ff >= 0 && ss < n && ff < n) {
+        std::vector<int> up, down;   // ss .. ancestor, and ff .. ancestor
+        int a = ss, b = ff;
+        while (depth[a] > depth[b]) { a = parent[a]; up.push_back(a); }
+        while (depth[b] > depth[a]) { b = parent[b]; down.push_back(b); }
+        while (a != b) {
+            a = parent[a]; up.push_back(a);
+            b = parent[b]; down.push_back(b);
+        }
+        // the ancestor ends both lists; drop it from one, then drop ff itself
+        if (!down.empty()) down.pop_back();
+        else up.pop_back();            // ff is an ancestor of ss: up ends with ff
+        up.insert(up.end(), down.rbegin(), down.rend());
+        return up;
+    }
+
     return {}; // implies direct traversal (i → j)
 }
 

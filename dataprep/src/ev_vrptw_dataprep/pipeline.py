@@ -41,8 +41,38 @@ def load_cities(cities_file, names=None):
     return cities.reset_index(drop=True)
 
 
-def list_benchmarks(instances_dir):
-    return sorted(p.stem for p in Path(instances_dir).glob("*.csv"))
+def list_benchmarks(paths):
+    """Solomon benchmarks first, then extended layouts (raw/extended, from extend.py)."""
+    return (sorted(p.stem for p in Path(paths.instances_dir).glob("*.csv"))
+            + sorted(p.stem for p in Path(paths.extended_dir).glob("*.csv")))
+
+
+def raw_instance_path(benchmark, paths):
+    """raw/solomon/<benchmark>.csv, or raw/extended/<benchmark>.csv for an extended layout."""
+    solomon = paths.instances_dir / f"{benchmark}.csv"
+    return solomon if solomon.exists() else paths.extended_dir / f"{benchmark}.csv"
+
+
+def read_tree(benchmark, paths):
+    """
+    The saved network of an extended layout, as (u, v) edges, or None for a Solomon
+    benchmark, whose network is Prim's MST. An extended network is the base MST plus
+    spurs, not the MST of all its sites, so it must never be rebuilt with Prim.
+    """
+    path = paths.mst_dir / f"{benchmark}_mst.txt"
+    if not path.exists():
+        return None
+    with open(path) as f:
+        return [tuple(map(int, line.split())) for line in f if line.strip() and not line.startswith("#")]
+
+
+def network(df, coordinates, benchmark, paths):
+    """Tree edges (u, v, length) over the given coordinates: the saved tree, else Prim."""
+    edges = read_tree(benchmark, paths)
+    if edges is None:
+        return prim_mst(coordinates)
+    assert len(edges) == len(df) - 1, f"{benchmark}: {len(edges)} edges for {len(df)} sites"
+    return [(u, v, float(np.hypot(*(coordinates[u] - coordinates[v])))) for u, v in edges]
 
 # ============================================================
 # SHORT PATHS
@@ -56,7 +86,7 @@ def generate_short_paths(benchmark, paths):
     scale and a translation onto a city leave it unchanged: one file per
     benchmark serves every city and scale.
     """
-    df          = load_solomon(paths.instances_dir / f"{benchmark}.csv")
+    df          = load_solomon(raw_instance_path(benchmark, paths))
     coordinates = df[['x', 'y']].values.astype(float)
     mst         = prim_mst(coordinates)
 
@@ -85,14 +115,14 @@ def generate_instance(
 
     # --- paths ---
     stem              = f"{city_name}_{scale}_{benchmark}"
-    instance_path     = paths.instances_dir / f"{benchmark}.csv"
-    scaled_csv        = paths.scaled_instances_dir / f"{stem}.csv"
+    instance_path     = raw_instance_path(benchmark, paths)
+    scaled_csv        = paths.city_instances_dir(city_name) / f"{stem}.csv"
     edge_samples_file = paths.edge_samples_dir / f"{stem}_edge_samples.json"
     edge_profile_file = paths.edge_profiles_dir / f"{stem}.csv"
     png_path          = paths.plots_dir / f"{stem}_mst.png"
     dem_path          = dem_path_for(paths.dem_dir, city_name)
 
-    for d in (paths.scaled_instances_dir, paths.edge_samples_dir, paths.edge_profiles_dir):
+    for d in (paths.city_instances_dir(city_name), paths.edge_samples_dir, paths.edge_profiles_dir):
         os.makedirs(d, exist_ok=True)
 
     # --- 1. Load and normalise raw Solomon instance ---
@@ -114,7 +144,7 @@ def generate_instance(
     print(f"  Loaded {n} sites | depot scaled: ({depot_x:.1f}, {depot_y:.1f})")
 
     # --- 2. MST ---
-    mst = prim_mst(coordinates)
+    mst = network(df, coordinates, benchmark, paths)
     print(f"  MST: {len(mst)} edges")
 
     # --- 3. Per-site lat/lon + substep sampling ---
@@ -216,7 +246,7 @@ def main(argv=None):
         paths = Paths.default()
 
     cities     = load_cities(paths.cities_file, args.cities)
-    benchmarks = args.benchmarks or list_benchmarks(paths.instances_dir)
+    benchmarks = args.benchmarks or list_benchmarks(paths)
 
     # Step 1: ensure all DEMs present and covering the right area
     print("="*60)
@@ -230,7 +260,8 @@ def main(argv=None):
     print("STEP 2: Short paths")
     print("="*60)
     for benchmark in benchmarks:
-        generate_short_paths(benchmark, paths)
+        if read_tree(benchmark, paths) is None:     # an extended layout has its tree file instead
+            generate_short_paths(benchmark, paths)
 
     # Step 3: generate all instances
     # First instance gets diagnosis + visualisation as a sanity check

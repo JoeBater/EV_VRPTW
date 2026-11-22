@@ -17,7 +17,7 @@ solver/
 |---|---|
 | `Instance` | Loads an instance (customers, demands, time windows, coordinates, elevation), the short-path file and the weather file. Builds the distance and slope matrices and holds the current set of routes. Also writes route and detailed logs. |
 | `Route` | One vehicle route. Simulates the route over time (arrival, service and departure times, lateness, loading) and its energy use per minute (see [Energy model](#energy-model)). |
-| `MST` | Shortest paths between pairs of customers, read from a `*_short_paths.txt` file. Legs are expanded into `SubStep`s. |
+| `MST` | Paths between pairs of customers along the minimum spanning tree: read per pair from a `*_short_paths.txt` file, or walked on the tree read from a `*_mst.txt` edge list. Legs are expanded into `SubStep`s. |
 | `LNS` | Large Neighbourhood Search: destroy and repair operators, 2-opt, quadrant-based moves. |
 | `*.hpp` structs | Small value types: `SoCEntry`, `LegResult`, `StepResult`, `MinuteResult`, `SolutionScore`, `StoreData`, `StoreCount`, `Quadrant`. |
 
@@ -112,8 +112,9 @@ committed; generate the others with `dataprep/`.
 
 | File | Format |
 |---|---|
-| Instance CSV `data/processed/instances/<City>_<scale>_<benchmark>.csv` | `id,x,y,demand,ready_time,due_time,service_time,scaled_x,scaled_y,lat,lon,elevation` (first row is the depot; read by column position) |
+| Instance CSV `data/processed/instances/<City>/<City>_<scale>_<benchmark>.csv` | `id,x,y,demand,ready_time,due_time,service_time,scaled_x,scaled_y,lat,lon,elevation` (first row is the depot; read by column position) |
 | Short paths `data/processed/short_paths/<benchmark>_short_paths.txt` | One line per pair, `from to: <steps>`; lines starting with `#` are ignored |
+| MST `data/processed/mst/<benchmark>_mst.txt` | Used when there is no short-paths file. One tree edge per line, `u v` (0-based, depot 0); the path between two sites is found on the tree. Same paths as the short-paths format, which grows with the square of the sites (~400 MB at 1000) |
 | Weather CSV `data/weather/open-meteo/<year>/<City>-weather-<year>.csv` | Open-Meteo hourly data: `month,day,hour,temperature_2m,dew_point_2m,rain,...` |
 
 ## TODO

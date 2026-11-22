@@ -46,13 +46,17 @@ inline fs::path resultsRoot() { return resolveRoot(resultsOverride(), "EV_VRPTW_
 
 inline std::string instanceFile(const std::string& city, int scale, const std::string& benchmark)
 {
-    return (dataRoot() / "processed" / "instances" /
+    return (dataRoot() / "processed" / "instances" / city /
             (city + "_" + std::to_string(scale) + "_" + benchmark + ".csv")).string();
 }
 
+// The MST paths: every pair listed (short_paths/, the Solomon benchmarks) or, where there is
+// no such file, just the tree's edges (mst/; for large instances), which MST walks itself
 inline std::string shortPathsFile(const std::string& benchmark)
 {
-    return (dataRoot() / "processed" / "short_paths" / (benchmark + "_short_paths.txt")).string();
+    fs::path listed = dataRoot() / "processed" / "short_paths" / (benchmark + "_short_paths.txt");
+    fs::path tree   = dataRoot() / "processed" / "mst" / (benchmark + "_mst.txt");
+    return (fs::exists(listed) || !fs::exists(tree) ? listed : tree).string();
 }
 
 // ~100 m terrain profile along each MST edge; optional - without it the solver

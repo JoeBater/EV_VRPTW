@@ -42,6 +42,20 @@ class Paths:
     def scaled_instances_dir(self):
         return self.processed_dir / "instances"
 
+    def city_instances_dir(self, city):
+        """Instances are filed by city: instances/<City>/<City>_<scale>_<benchmark>.csv"""
+        return self.scaled_instances_dir / city
+
+    @property
+    def extended_dir(self):
+        """Solomon layouts with stores added (extend.py), same CSV format as raw/solomon"""
+        return self.instances_dir.parent / "extended"
+
+    @property
+    def mst_dir(self):
+        """Tree edge lists for networks that are not a fresh Prim MST (extend.py)"""
+        return self.processed_dir / "mst"
+
     @property
     def short_paths_dir(self):
         return self.processed_dir / "short_paths"

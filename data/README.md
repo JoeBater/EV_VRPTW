@@ -13,7 +13,7 @@ data/
 │   ├── solomon/        Original Solomon benchmark CSVs (16 instances)
 │   └── cities.csv      City table: depot lat/lon (centre, or moved off water), size, hilliness, population
 ├── processed/
-│   ├── instances/      <City>_<scale>_<benchmark>.csv         (sample cities committed)
+│   ├── instances/      <City>/<City>_<scale>_<benchmark>.csv  (sample cities committed)
 │   ├── short_paths/    <benchmark>_short_paths.txt           (all committed; city-independent)
 │   ├── edge_profiles/  <City>_<scale>_<benchmark>.csv         (sample cities committed)
 │   ├── edge_samples/   per-edge elevation samples (JSON)      (ignored)
