@@ -22,6 +22,8 @@ Route::Route(const Route& other)
       depot_departure_time(other.depot_departure_time),
       departure_times(other.departure_times),
       late_flags(other.late_flags),
+      lateness_per_stop(other.lateness_per_stop),
+      earliness_per_stop(other.earliness_per_stop),
       total_late(other.total_late),
       loadings(other.loadings),
       max_loading(other.max_loading),
@@ -45,6 +47,8 @@ Route& Route::operator=(const Route& other) {
     depot_departure_time = other.depot_departure_time;
     departure_times = other.departure_times;
     late_flags = other.late_flags;
+    lateness_per_stop = other.lateness_per_stop;
+    earliness_per_stop = other.earliness_per_stop;
     total_late = other.total_late;
     loadings = other.loadings;
     max_loading = other.max_loading;
@@ -109,7 +113,7 @@ std::pair<double, double> Route::speedAndFactor(double distance) {
 }
 
 double Route::getDistance() {
-    return distances[distances.size()-1];
+    return distances.empty() ? 0 : distances[distances.size()-1];
 }
 
 double Route::temperatureFactor(double temp) {
@@ -139,18 +143,23 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
     CAPACITY = capacity;  // loadFactor() scales by the instance's capacity (1000 for the 2-series)
 
     // guard against r being empty - and then bail
+    // an empty route is a vehicle that stays at the depot
     if (r.empty()) {
-        cerr << "route is empty" << endl;
         total_distance = 0;
-        distances.clear();
+        distances = {0};
         slopes.clear();
         speeds.clear();
-        arrival_times.clear();
+        arrival_times = {0};
         departure_times.clear();
         late_flags.clear();
+        lateness_per_stop.clear();
+        earliness_per_stop.clear();
         loadings.clear();
+        soc_summary = {1.0};
+        soc_detail.clear();
         total_late = 0;
         max_loading = 0;
+        is_feasible = 1;
         return;
     }
     
@@ -172,7 +181,8 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
     soc_summary = std::vector<double>(r.size() + 1, 0.0);
     soc_detail.clear();
     
-    // calculate the loads - load back to depot is immaterial - it should be zero
+    // loadings[i]: the load on the leg into stop i, everything not yet delivered; the leg back
+    // to the depot is empty
     loadings = std::vector<int>(r.size(), 0);
     int total_load = 0;
     for (size_t i = 0; i < r.size(); i++) {
@@ -180,7 +190,7 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
     }
     loadings[0] = total_load;
     for (size_t i = 1; i < r.size(); i++) {
-        loadings[i] = loadings[i-1]-demands[r[i]];
+        loadings[i] = loadings[i-1] - demands[r[i-1]];  // stop i-1's goods are off the van
     }
     loadings.push_back(0); // back to depot, empty
     
@@ -308,15 +318,17 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
             leg_result.soc_used += net;
             leg_result.soc_regen += minute_regen;
 
-            const LegSegment& here = segments[std::min(k, segments.size() - 1)];
-            double minutes_driven = 1.0 - minutes_left;
-            SoCEntry soc {
-                route_number, current_minute, net, minute_regen, cumulative_soc, "driving", "-",
-                minute_distance * 60.0 / 1000.0 / minutes_driven, minute_distance, here.step_distance,
-                minute_dz / minute_distance, temperatures[hr], rainfall[hr], load,
-                to, here.step_to
-            };
-            soc_detail.push_back(soc);
+            if (RECORD_DETAIL) {
+                const LegSegment& here = segments[std::min(k, segments.size() - 1)];
+                double minutes_driven = 1.0 - minutes_left;
+                SoCEntry soc {
+                    route_number, current_minute, net, minute_regen, cumulative_soc, "driving", "-",
+                    minute_distance * 60.0 / 1000.0 / minutes_driven, minute_distance, here.step_distance,
+                    minute_dz / minute_distance, temperatures[hr], rainfall[hr], load,
+                    to, here.step_to
+                };
+                soc_detail.push_back(soc);
+            }
 
             current_minute++;
         }
@@ -342,7 +354,11 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
             cumulative_soc -= soc_used;
             parasitic_soc_used += soc_used;
 
-            
+                        if (!RECORD_DETAIL) {
+                current_minute++;
+                continue;
+            }
+
             std::string activity = (current_minute < readyTimes[site_id]) ? "waiting" : "at_site";
             std::string timeliness = "";
             if (current_minute < readyTimes[site_id])
@@ -374,7 +390,7 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
         soc_detail.clear();
         
         // pre-load the soc-detail in case of any delayed departures
-        for (int mm = 0; mm < depot_departure_time; mm++) {
+        for (int mm = 0; RECORD_DETAIL && mm < depot_departure_time; mm++) {
             auto [hr, _] = getSimulationTimeHoursMins(mm);
             SoCEntry soc {
                 route_number, mm, 0.0, 0.0, 1.0, "delayed-start", "delayed-start",
@@ -499,8 +515,8 @@ void Route::simulateRouteTimelineMST(const vector<vector<int>>& distanceMatrix,
 
 
     depot_departure_time = 0;
-    simulateRoute();
-    
+    if (!OPTIMISE_DEPOT_DEPARTURE) simulateRoute();  // the search below starts with this run
+
     if (OPTIMISE_DEPOT_DEPARTURE == true) {
         
         depot_departure_time = 0; // ensure any changes reset
@@ -807,10 +823,45 @@ double Route::speedModifier(double slope, double rain_intensity, int load_kg) {
     else if (rain_intensity > 2)   mod *= 0.85;  // moderate rain
     else if (rain_intensity > 0)   mod *= 0.95;  // light rain
 
-    // Load impact (linear-ish)
-    mod *= 1.0 - std::min(0.2, (load_kg * LOAD_KG_CONV) / 2000.0);  // max 20% speed penalty for full load
+    mod *= loadSpeedFactor(load_kg);
 
     return std::max(mod, 0.3);  // prevent absurdly slow speeds
+}
+
+double Route::loadSpeedFactor(int load) {
+    return 1.0 - std::min(0.2, (load * LOAD_KG_CONV) / 2000.0);  // max 20% slower for a full load
+}
+
+// Minutes to drive from -> to with no load and no rain, along the same terrain segments as
+// simulateLeg, not rounded. The search uses it to estimate arrival times.
+double Route::legMinutes(int from, int to, const vector<vector<int>>& distanceMatrix,
+                         const vector<vector<double>>& slopeMatrix, const MST& spanning_tree) {
+    vector<int> nodes = spanning_tree.getSteps(from, to);
+    nodes.insert(nodes.begin(), from);
+    nodes.push_back(to);
+    double minutes = 0.0;
+    for (size_t k = 0; k + 1 < nodes.size(); k++) {
+        int a = nodes[k], b = nodes[k + 1];
+        int step_dist = distanceMatrix[a][b];
+        if (step_dist <= 0) continue;
+        double notional_speed = speedAndFactor(step_dist).first;
+        auto drive = [&](double length, double dz) {
+            double grade = std::clamp(dz / length, -MAX_GRADE, MAX_GRADE);
+            double speed = notional_speed * speedModifier(grade, 0.0, 0);
+            minutes += length / (speed * 1000.0 / 60.0);
+        };
+        const vector<EdgeSegment>* profile = spanning_tree.getSegments(a, b);
+        if (profile == nullptr || profile->empty()) {
+            drive(step_dist, slopeMatrix[a][b] * step_dist);
+            continue;
+        }
+        double profile_length = 0.0;
+        for (const auto& s : *profile) profile_length += s.length;
+        double stretch = (profile_length > 0.0) ? step_dist / profile_length : 1.0;
+        for (const auto& s : *profile)
+            if (s.length > 0.0) drive(s.length * stretch, s.dz);
+    }
+    return minutes;
 }
 
 int Route::getEndTime() const {

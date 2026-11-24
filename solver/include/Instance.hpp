@@ -55,7 +55,10 @@ public:
     MST getSpanningTree();
     const MST getSpanningTree() const;
     
-    bool isTimeWindowFeasible(const std::vector<int>& rte) const;
+    // Simulates one route (calculateRoutes() does them all)
+    void simulate(Route& route);
+    // Minutes to drive i -> j, no load and no rain, unrounded: the search's estimate of travel time
+    vector<vector<double>> travelMinutes();
     
     vector<int> getReadyTimes();
     const vector<int>& getReadyTimes() const;

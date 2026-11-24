@@ -25,11 +25,12 @@
 //   detailed_route_log.csv  its flatland simulation
 //   searchProgress.csv      LNS progress
 // and appends one row per attempt (fleet size) to .../baseline_summary.csv;
-// the row with clean = 1 is the baseline.
+// the row with clean = 1 is the baseline. The LNS may leave vehicles unused, so the vehicles
+// column is the number of routes the solution uses, which can be below the fleet offered.
 //
 // Warm start: if results/solomon_solutions/<benchmark>.txt holds a published solution (SINTEF
 // format, "Route 1 : 5 3 7 ..."), the first attempt starts the LNS from it, with its fleet;
-// the LNS only accepts improvements, so the baseline is never worse than it. Attempts with
+// the LNS returns the best solution it has seen, so the baseline is never worse than it. Attempts with
 // extra vehicles start from a random assignment. The converted start is kept as
 // solomon_start.txt.
 
@@ -55,7 +56,41 @@ static int convertPublishedSolution(const string& sintefFile, const string& rout
     }
     return routes;
 }
-exp0::exp0(const std::vector<std::string>& only, int iterations, bool completeGraph)
+// Warm start for an extended benchmark (e.g. r101_200): the previous size's baseline routes, kept
+// as they are, plus the stores added since, split by angle around the depot into the extra
+// vehicles (vehicles - previous routes). Returns false if there is no previous baseline.
+static bool buildExtendedStart(const string& previousRouteFile, Instance& instance, int previousSites,
+                               int vehicles, const string& startFile)
+{
+    std::ifstream in(previousRouteFile);
+    if (!in.is_open()) return false;
+    std::vector<string> routes;
+    string line;
+    while (std::getline(in, line))
+        if (line.find(':') != string::npos) routes.push_back(line.substr(line.find(':') + 1));
+    int extra = vehicles - (int)routes.size();
+    if (routes.empty() || extra < 1) return false;
+
+    std::vector<StoreData> sites = instance.getInstanceData();
+    const StoreData& depot = sites[0];
+    std::vector<std::pair<double, int>> added;   // (angle around the depot, site)
+    for (int i = previousSites; i < (int)sites.size(); i++)
+        added.push_back({std::atan2((double)sites[i].y - depot.y, (double)sites[i].x - depot.x), i});
+    std::sort(added.begin(), added.end());
+
+    std::ofstream out(startFile);
+    int id = 0;
+    for (const string& r : routes) out << id++ << " :" << r << "\n";
+    for (int k = 0; k < extra; k++) {
+        size_t from = added.size() * k / extra, to = added.size() * (k + 1) / extra;
+        out << id++ << " :";
+        for (size_t j = from; j < to; j++) out << " " << added[j].second;
+        out << "\n";
+    }
+    return true;
+}
+
+exp0::exp0(const std::vector<std::string>& only, int iterations, bool completeGraph, bool randomStart)
 {
     const string layoutCity = "Cambridge";
     const int scale = 5;
@@ -103,20 +138,46 @@ exp0::exp0(const std::vector<std::string>& only, int iterations, bool completeGr
         string solutionDir = paths::resultsDir(solutionsDir + "/" + b.name);
         string startFile = solutionDir + "solomon_start.txt";
         string sintefFile = (paths::resultsRoot() / "solomon_solutions" / (b.name + ".txt")).string();
-        int publishedRoutes = convertPublishedSolution(sintefFile, startFile);
+        int publishedRoutes = randomStart ? 0 : convertPublishedSolution(sintefFile, startFile);
         int firstFleet = publishedRoutes > 0 ? publishedRoutes : b.vehicles;
+        int fleetStep = 1, lastFleet = firstFleet + MAX_EXTRA_VEHICLES;
+
+        // Extended benchmark: start from the previous size's baseline, with its fleet scaled by
+        // size, and add ~10% more vehicles per attempt (up to 5 more attempts)
+        string previous = previousSize(b.name);
+        string previousRouteFile = previous.empty() ? "" :
+            paths::resultsDir(solutionsDir + "/" + previous) + "route_log.txt";
+        int previousRoutes = 0;
+        if (!previous.empty() && !randomStart) {
+            std::ifstream in(previousRouteFile);
+            string line;
+            while (std::getline(in, line)) if (line.find(':') != string::npos) previousRoutes++;
+            if (previousRoutes > 0)
+                firstFleet = (previousRoutes * customerCount(b.name) + customerCount(previous) - 1)
+                             / customerCount(previous);
+            fleetStep = std::max(1, firstFleet / 10);
+            lastFleet = firstFleet + MAX_EXTRA_VEHICLES * fleetStep;
+            startFile = solutionDir + "extended_start.txt";
+        }
 
         // Start from the published (or Solomon best-known) fleet and add vehicles until the
         // flatland solution is clean (no late stops, no overload). Matching Solomon's optimum
         // is not the aim; a clean baseline is, since exp1 measures what terrain and weather do to it.
-        for (int vehicles = firstFleet; vehicles <= firstFleet + MAX_EXTRA_VEHICLES; vehicles++) {
-            bool warm = publishedRoutes > 0 && vehicles == publishedRoutes;
-            cout << "== " << b.name << (completeGraph ? " (complete graph)" : "") << ": " << vehicles
-                 << " vehicles x " << b.capacity << ", " << iterations << " iterations, "
-                 << (warm ? "published start" : "random start") << endl;
-
+        for (int vehicles = firstFleet; vehicles <= lastFleet; vehicles += fleetStep) {
             Instance* instance = load(b, vehicles);
             if (completeGraph) instance->useCompleteGraph();
+
+            bool warm = publishedRoutes > 0 && vehicles == publishedRoutes;
+            string startKind = warm ? "solomon" : "random";
+            if (previousRoutes > 0 &&
+                buildExtendedStart(previousRouteFile, *instance, customerCount(previous) + 1, vehicles, startFile)) {
+                warm = true;
+                startKind = previous;
+            }
+            cout << "== " << b.name << (completeGraph ? " (complete graph)" : "") << ": " << vehicles
+                 << " vehicles x " << b.capacity << ", " << iterations << " iterations, "
+                 << (warm ? "start from " + startKind : string("random start")) << endl;
+
             if (warm) instance->readRoutesFromFile(startFile);
             instance->calculateRoutes();
 
@@ -127,16 +188,18 @@ exp0::exp0(const std::vector<std::string>& only, int iterations, bool completeGr
 
             instance->calculateRoutes();
             bool clean = instance->getTotalLate() == 0 && instance->getTotalOverload() == 0;
-            bool last = vehicles == firstFleet + MAX_EXTRA_VEHICLES;
+            int used = 0;
+            for (Route& r : instance->getRoutes()) used += r.size() > 0;
+            bool last = vehicles + fleetStep > lastFleet;
 
             std::time_t now = std::time(nullptr);
             char runAt[32];
             std::strftime(runAt, sizeof(runAt), "%Y-%m-%dT%H:%M:%S", std::localtime(&now));
 
-            summary << runAt << "," << b.name << "," << vehicles << "," << b.capacity << ","
+            summary << runAt << "," << b.name << "," << used << "," << b.capacity << ","
                     << iterations << "," << instance->getTotalDistance() << "," << instance->getTotalLate() << ","
                     << instance->getTotalTardiness() << "," << instance->getTotalOverload() << ","
-                    << lastReturnOf(*instance) << "," << (int)seconds << "," << (clean ? 1 : 0) << "," << (warm ? "solomon" : "random");
+                    << lastReturnOf(*instance) << "," << (int)seconds << "," << (clean ? 1 : 0) << "," << startKind;
 
             instance->writeRoutesToFile(solutionDir + "route_log.txt");
 
@@ -155,7 +218,7 @@ exp0::exp0(const std::vector<std::string>& only, int iterations, bool completeGr
             summary << "\n";
             summary.flush();
 
-            cout << b.name << " (" << vehicles << " vehicles): cost " << score.total_cost << ", distance "
+            cout << b.name << " (" << used << " of " << vehicles << " vehicles): cost " << score.total_cost << ", distance "
                  << instance->getTotalDistance() << " m, late stops " << instance->getTotalLate()
                  << ", overload " << instance->getTotalOverload() << " (" << (int)seconds << " s)"
                  << (clean ? "" : " - not clean") << endl;

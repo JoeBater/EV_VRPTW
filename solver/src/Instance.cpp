@@ -571,19 +571,19 @@ int Instance::estimateNumRoutes() {
     return (int)num_routes;
 }
 
-bool Instance::isTimeWindowFeasible(const std::vector<int>& rte) const {
-    int time = 0;
-    for (size_t i = 0; i < rte.size(); ++i) {
-        int node = rte[i];
-        int travel = (i == 0) ? distanceMatrix[0][node] : distanceMatrix[rte[i - 1]][node];
-        time += travel;
+void Instance::simulate(Route& route) {
+    route.simulateRouteTimelineMST(distanceMatrix, slopeMatrix, spanning_tree, ready_times, due_times, service_times,
+                                   vehicle_capacity, demands, temperatures, rainfall);
+}
 
-        time = std::max(time, ready_times[node]);
-        if (time > due_times[node]) return false;
-
-        time += service_times[node];
-    }
-    return true;
+vector<vector<double>> Instance::travelMinutes() {
+    int n = instanceData.size();
+    vector<vector<double>> minutes(n, vector<double>(n, 0.0));
+    Route probe;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            if (i != j) minutes[i][j] = probe.legMinutes(i, j, distanceMatrix, slopeMatrix, spanning_tree);
+    return minutes;
 }
 
 
@@ -605,8 +605,7 @@ void Instance::initializeRoutes(int nr) {
     }
 
     // Shuffle the store indices to randomize assignment
-    std::random_device rd;
-    std::mt19937 g(rd());
+    std::mt19937 g(1);  // fixed, so a random start is reproducible
     std::shuffle(store_indices.begin(), store_indices.end(), g);
 
     // Assign stores round-robin to routes
@@ -664,8 +663,7 @@ void Instance::initializeRoutesCapacityConstrained(int nr) {
     }
 
     // Shuffle the store indices to randomize assignment
-    std::random_device rd;
-    std::mt19937 g(rd());
+    std::mt19937 g(1);  // fixed, so a random start is reproducible
     std::shuffle(store_indices.begin(), store_indices.end(), g);
 
     // Assign stores round-robin to routes
@@ -821,10 +819,12 @@ void Instance::writeRoutesToFile(string filename) {
         return;
     }
     
+    int id = 0;
     for (size_t r = 0; r < routes.size(); r++) {
         
         vector<int> temp = routes[r].getRoute();
-        file << r << " :";
+        if (temp.empty()) continue;  // a vehicle the solution doesn't use
+        file << id++ << " :";
         for (size_t t = 0; t < temp.size(); t++) {
             file << " " << temp[t];
         }

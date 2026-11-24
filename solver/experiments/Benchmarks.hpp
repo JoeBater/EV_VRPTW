@@ -16,16 +16,50 @@ struct Benchmark {
     int capacity;
 };
 
+// The Solomon benchmarks extended with added stores (dataprep extend.py): <name>_<customers>.
+// Each size contains the one before. vehicles is the Solomon fleet scaled by size, only used when
+// the previous size has no baseline to start from (see exp0).
+inline const std::vector<int>& extendedSizes()
+{
+    static const std::vector<int> sizes = {200, 400};
+    return sizes;
+}
+
 inline const std::vector<Benchmark>& benchmarks()
 {
-    static const std::vector<Benchmark> list = {
-        {"c107", 10, 200}, {"c108", 10, 200}, {"c109", 10, 200},
-        {"r101", 19, 200}, {"r104",  9, 200}, {"r105", 14, 200},
-        {"r204",  2, 1000}, {"r205", 3, 1000}, {"r208", 2, 1000},
-        {"rc101", 14, 200}, {"rc104", 10, 200}, {"rc105", 13, 200}, {"rc107", 11, 200},
-        {"rc201",  4, 1000}, {"rc204", 3, 1000}, {"rc207", 3, 1000},
-    };
+    static const std::vector<Benchmark> list = [] {
+        std::vector<Benchmark> solomon = {
+            {"c107", 10, 200}, {"c108", 10, 200}, {"c109", 10, 200},
+            {"r101", 19, 200}, {"r104",  9, 200}, {"r105", 14, 200},
+            {"r204",  2, 1000}, {"r205", 3, 1000}, {"r208", 2, 1000},
+            {"rc101", 14, 200}, {"rc104", 10, 200}, {"rc105", 13, 200}, {"rc107", 11, 200},
+            {"rc201",  4, 1000}, {"rc204", 3, 1000}, {"rc207", 3, 1000},
+        };
+        std::vector<Benchmark> all = solomon;
+        for (int size : extendedSizes())
+            for (const Benchmark& b : solomon)
+                all.push_back({b.name + "_" + std::to_string(size), b.vehicles * size / 100, b.capacity});
+        return all;
+    }();
     return list;
+}
+
+// "r101_400" -> "r101_200", "r101_200" -> "r101", "r101" -> ""
+inline std::string previousSize(const std::string& name)
+{
+    size_t underscore = name.rfind('_');
+    if (underscore == std::string::npos) return "";
+    int size = std::stoi(name.substr(underscore + 1));
+    std::string root = name.substr(0, underscore);
+    int previous = 100;
+    for (int s : extendedSizes()) if (s < size) previous = std::max(previous, s);
+    return previous == 100 ? root : root + "_" + std::to_string(previous);
+}
+
+inline int customerCount(const std::string& name)
+{
+    size_t underscore = name.rfind('_');
+    return underscore == std::string::npos ? 100 : std::stoi(name.substr(underscore + 1));
 }
 
 // Every city with generated inputs; cities without inputs are skipped at run time.

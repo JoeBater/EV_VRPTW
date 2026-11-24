@@ -54,7 +54,7 @@ class Route {
         double capacity_penalty_multiplier = 1000.0;  // penalty for exceeding capacity
         double capacity_util = 0.0; // or "feature utility" if you generalize
         
-        const double LOAD_KG_CONV = 5.0;
+        static constexpr double LOAD_KG_CONV = 5.0;
         const double FULL_BATTERY_KWH = 40.0;
         
         const bool USE_ACCELERATION_IMPULSE = true;
@@ -67,6 +67,7 @@ class Route {
         const double BASE_SOC = ENERGY_PER_KM_KWH / 1000.0 / FULL_BATTERY_KWH;
         inline static bool REGEN_BRAKING = true; // switched off with main.cpp --no-regen
         inline static int DAY_START_HOUR = 0;    // clock hour of minute 0, for weather (main.cpp --start-hour)
+        inline static bool RECORD_DETAIL = true; // per-minute soc_detail; the search turns it off
 
         // terrain: gravity on each ~100 m segment of the MST edges
         const double VAN_MASS_KG = 2500.0;      // e.g. eSprinter, empty
@@ -102,6 +103,15 @@ class Route {
         static bool regenBraking() { return REGEN_BRAKING; }
         static void setDayStartHour(int h) { DAY_START_HOUR = h; }
         static int dayStartHour() { return DAY_START_HOUR; }
+        // Off: simulate without the per-minute log (getSoCDetail() is then empty); every
+        // other result is the same. The LNS turns it off while searching.
+        static void setRecordDetail(bool on) { RECORD_DETAIL = on; }
+        static bool recordDetail() { return RECORD_DETAIL; }
+        // speed multiplier for a load (1 empty, down to 0.8 from 80 units up)
+        static double loadSpeedFactor(int load);
+        // minutes from -> to with no load and no rain, unrounded (the search's estimate)
+        double legMinutes(int from, int to, const vector<vector<int>>& distanceMatrix,
+                          const vector<vector<double>>& slopeMatrix, const MST& spanning_tree);
 
         Route(); // default constructor - empty route
         ~Route();
