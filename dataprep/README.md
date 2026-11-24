@@ -77,8 +77,18 @@ PYTHONPATH=src python -m ev_vrptw_dataprep.extend --base r101     --benchmarks r
 PYTHONPATH=src python -m ev_vrptw_dataprep --benchmarks r101_200 r104_200 r105_200 r204_200 r205_200 r208_200
 ```
 
+```bash
+PYTHONPATH=src python -m ev_vrptw_dataprep.extend --base c107 --benchmarks c107 c108 c109 --placement near
+PYTHONPATH=src python -m ev_vrptw_dataprep.extend --base rc101 \
+    --benchmarks rc101 rc104 rc105 rc107 rc201 rc204 rc207 --placement mixed
+```
+
 How each new store is placed:
-- It is drawn at a random whole-number grid point inside the base layout's bounding box.
+- It is drawn by the `--placement` rule, then rounded to a whole-number grid point:
+  - `random` (R): anywhere in the base layout's bounding box;
+  - `near` (C): 50–100 m (up to ~112 m after rounding) in a random direction from a random existing
+    customer, original or added, so the clusters grow;
+  - `mixed` (RC): a coin flip between the two for each store.
 - It is kept only if it **and its new road** are on land (above 1.5 m) in **every** city. Roads may not
   cross water: no bridges or fords.
 - It joins the nearest existing node (original or new) by one road.
@@ -87,12 +97,22 @@ The result is the base MST plus one spur per store. It is a tree, but not the MS
 is saved as an edge list in `data/processed/mst/<name>_mst.txt`. The pipeline uses that list instead of
 running Prim again, and the solver walks paths on it.
 
+Later rounds extend an extended layout, keeping its network, so each size contains the one before:
+
+```bash
+PYTHONPATH=src python -m ev_vrptw_dataprep.extend --base r101_200 \
+    --benchmarks r101_200 r104_200 r105_200 r204_200 r205_200 r208_200 --add 200    # -> r101_400 ...
+```
+
+A later round is seeded with the seed and the base size: the plain seed would replay the first round's
+draws and put new stores on the same points.
+
 All benchmarks sharing a layout get the same new stores. Each gets its own demands and windows, copied
 from a random donor customer of that benchmark:
 - the donor's demand;
 - a whole-horizon window if the donor has one, else the donor's window width, placed where the store is
   reachable and the vehicle can still return before the depot closes;
-- service time 10.
+- the donor's service time (10 for R and RC, 90 for C).
 
 New stores are numbered after the originals (sites 101+), so the first 101 rows and the original edge
 profiles are unchanged. Stores may share a site (co-located customers).

@@ -2,7 +2,12 @@
 Extend a Solomon layout with extra stores, growing its road network instead of rebuilding it.
 
 Each new store:
-  1. is drawn at a random whole-number grid point inside the base layout's bounding box;
+  1. is drawn by the --placement rule, then rounded to a whole-number grid point as in Solomon:
+       random  anywhere inside the base layout's bounding box (R layouts);
+       near    NEAR_M metres (default 50-100) in a random direction from a random existing
+               customer, original or added, so clusters grow (C layouts);
+       mixed   a coin flip between the two for each store (RC layouts);
+     two new stores may land on the same grid point (co-located customers);
   2. is kept only if, placed in every city, it and the new road to it are on land
      (no bridges or fords: every ~100 m point of the road must be above WATER_M);
   3. joins the network by one new road to the nearest existing node (original or new).
@@ -11,17 +16,22 @@ The base network is never changed, so the result is the base MST plus one spur p
 but not the MST of all the points. It is saved as an edge list (processed/mst/<name>_mst.txt) and the
 pipeline uses it as given rather than running Prim again.
 
-Demand and time window come from a random "donor" customer of the same benchmark, so each
+Demand and time window come from a random "donor": an original Solomon customer of the same benchmark
+(also when extending an extended layout, so rounds do not drift), so each
 benchmark keeps its own character (r101 tight, r104 mostly unconstrained):
   - demand: the donor's;
   - a donor whose window spans the whole horizon (ready 0) gives (0, latest feasible due);
   - otherwise the donor's window width, placed uniformly where the store is reachable from the
     depot and the vehicle can still return before the depot closes (Solomon time: 1 unit = 1 min).
-Service time is SERVICE (10, as for every R customer).
+  - service time: the donor's (10 for R and RC, 90 for C1).
 
 Usage, from dataprep/:
   PYTHONPATH=src python -m ev_vrptw_dataprep.extend --base r101 \
       --benchmarks r101 r104 r105 r204 r205 r208 --add 100 --seed 1
+  PYTHONPATH=src python -m ev_vrptw_dataprep.extend --base c107 --benchmarks c107 c108 c109 \
+      --placement near
+  PYTHONPATH=src python -m ev_vrptw_dataprep.extend --base rc101 \
+      --benchmarks rc101 rc104 rc105 rc107 rc201 rc204 rc207 --placement mixed
 writes raw/extended/<benchmark>_<customers>.csv and processed/mst/<benchmark>_<customers>_mst.txt;
 then run the pipeline on the new names (e.g. --benchmarks r101_200) for the city files.
 """
@@ -42,7 +52,7 @@ from .geometry import prim_mst, sample_edge, xy_to_latlon
 from .pipeline import load_cities, load_solomon, raw_instance_path, read_tree
 
 WATER_M  = 1.5    # below this the DEM is water (as for the city points in cities.csv)
-SERVICE  = 10
+NEAR_M   = (50, 100)   # metres from an existing customer, for --placement near / mixed
 RAW_COLS = ["CUST_NO.", "XCOORD.", "YCOORD.", "DEMAND", "READY_TIME", "DUE_DATE", "SERVICE_TIME"]
 
 
@@ -83,7 +93,20 @@ def on_land(points_xy, depot_xy, dems, unit):
     return True
 
 
-def grow_layout(base, base_edges, add, dems, scale, rng, max_draws=100_000):
+def draw_point(coords, lo, hi, placement, unit, rng, near_m=NEAR_M):
+    """One candidate grid point by the placement rule (see the module docstring)."""
+    if placement == "mixed":
+        placement = "random" if rng.random() < 0.5 else "near"
+    if placement == "random":
+        return np.array([rng.integers(lo[0], hi[0] + 1), rng.integers(lo[1], hi[1] + 1)], dtype=float)
+    anchor = coords[rng.integers(1, len(coords))]            # any customer, original or added; not the depot
+    r      = rng.uniform(*near_m) / unit
+    angle  = rng.uniform(0, 2 * np.pi)
+    p      = np.round(anchor + r * np.array([np.cos(angle), np.sin(angle)]))
+    return np.clip(p, 0, 100)                                  # stay on Solomon's 100 x 100 grid
+
+
+def grow_layout(base, base_edges, add, dems, scale, rng, placement="random", max_draws=100_000):
     """Add `add` stores; returns their (x, y), the new edges and the number of draws rejected."""
     unit     = metres_per_unit(scale)
     coords   = base[["x", "y"]].to_numpy(dtype=float)
@@ -93,7 +116,7 @@ def grow_layout(base, base_edges, add, dems, scale, rng, max_draws=100_000):
     while len(new_xy) < add:
         if rejected > max_draws:
             raise RuntimeError(f"gave up after {rejected} draws on water")
-        p = np.array([rng.integers(lo[0], hi[0] + 1), rng.integers(lo[1], hi[1] + 1)], dtype=float)
+        p = draw_point(coords, lo, hi, placement, unit, rng)
         nearest = int(np.argmin(np.hypot(*(coords - p).T)))      # lowest index on ties
         road = [np.array(s) / unit for s in sample_edge(coords[nearest] * unit, p * unit, SUBSTEP_INTERVAL)]
         if not on_land(road, depot, dems, unit):                  # road includes the store itself
@@ -105,26 +128,26 @@ def grow_layout(base, base_edges, add, dems, scale, rng, max_draws=100_000):
     return np.array(new_xy, dtype=int), new_edges, rejected
 
 
-def new_customers(benchmark_df, xy, rng):
-    """Demand and time window for each new store, from random donors of the same benchmark."""
+def new_customers(benchmark_df, xy, rng, donors):
+    """Demand and time window for each new store, from random donors (the original Solomon customers)."""
     depot  = benchmark_df.iloc[0]
-    donors = benchmark_df.iloc[1:]
     horizon = int(depot.due_time)
     rows = []
     for x, y in xy:
         donor = donors.iloc[rng.integers(len(donors))]
         t   = math.hypot(x - depot.x, y - depot.y)
         lo  = math.ceil(t)                                   # earliest arrival
-        hi  = math.floor(horizon - t - SERVICE)              # latest service start that still gets home
+        service = int(donor.service_time)
+        hi  = math.floor(horizon - t - service)              # latest service start that still gets home
         if donor.ready_time == 0:                            # whole-horizon window
             ready, due = 0, hi
         else:
             width = min(int(donor.due_time - donor.ready_time), hi - lo)
             ready = int(rng.integers(lo, hi - width + 1))
             due   = ready + width
-        assert ready + SERVICE <= due, (x, y, ready, due)
+        assert ready + service <= due, (x, y, ready, due)
         rows.append(dict(x=int(x), y=int(y), demand=int(donor.demand),
-                         ready_time=ready, due_time=due, service_time=SERVICE))
+                         ready_time=ready, due_time=due, service_time=service))
     return pd.DataFrame(rows)
 
 
@@ -142,25 +165,35 @@ def write_tree(edges, path):
     print(f"  Written: {path}")
 
 
-def extend(base, benchmarks, add, seed, paths, scale=5, city_names=None):
-    rng    = np.random.default_rng(seed)
+def solomon_names(paths):
+    return {p.stem for p in paths.instances_dir.glob("*.csv")}
+
+
+def extend(base, benchmarks, add, seed, paths, scale=5, city_names=None, placement="random"):
     cities = load_cities(paths.cities_file, city_names)
     base_df, base_edges = base_network(base, paths)
+    # A later round seeded like the first would replay its draws and land on the same points, so it
+    # is seeded with the base size too. The first round (Solomon base) keeps the plain seed.
+    rng    = np.random.default_rng(seed if base in solomon_names(paths) else [seed, len(base_df) - 1])
     for b in benchmarks:                                    # they must share the base's layout
         other = load_solomon(raw_instance_path(b, paths))
         if not np.array_equal(other[["x", "y"]].values, base_df[["x", "y"]].values):
             raise SystemExit(f"{b} does not share {base}'s layout")
 
-    xy, new_edges, rejected = grow_layout(base_df, base_edges, add, city_dems(cities, paths), scale, rng)
+    xy, new_edges, rejected = grow_layout(base_df, base_edges, add, city_dems(cities, paths), scale, rng,
+                                          placement)
     edges = base_edges + new_edges
     total = len(base_df) - 1 + add
-    print(f"{base}: added {add} stores ({rejected} draws rejected for water) -> {total} customers")
+    print(f"{base}: added {add} stores, placement {placement} "
+          f"({rejected} draws rejected for water) -> {total} customers")
 
     os.makedirs(paths.extended_dir, exist_ok=True)
     os.makedirs(paths.mst_dir, exist_ok=True)
     for b in benchmarks:
         df  = load_solomon(raw_instance_path(b, paths))
-        new = new_customers(df, xy, rng)
+        # donors are always the original Solomon customers, so repeated rounds don't drift
+        solomon = load_solomon(paths.instances_dir / f"{b.split('_')[0]}.csv")
+        new = new_customers(df, xy, rng, solomon.iloc[1:])
         new.insert(0, "id", range(len(df) + 1, len(df) + 1 + len(new)))
         name = f"{b.split('_')[0]}_{total}"
         write_raw(pd.concat([df, new], ignore_index=True), paths.extended_dir / f"{name}.csv")
@@ -177,9 +210,12 @@ def main(argv=None):
                    help="benchmarks sharing that layout; each gets its own demands and windows")
     p.add_argument("--add", type=int, default=100, help="stores to add (default 100)")
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--placement", choices=["random", "near", "mixed"], default="random",
+                   help="random (R), near an existing customer (C), or a coin flip per store (RC)")
     p.add_argument("--cities", nargs="+", help="cities that must be dry (default: all)")
     args = p.parse_args(argv)
-    extend(args.base, args.benchmarks, args.add, args.seed, Paths.default(), city_names=args.cities)
+    extend(args.base, args.benchmarks, args.add, args.seed, Paths.default(), city_names=args.cities,
+           placement=args.placement)
 
 
 if __name__ == "__main__":
